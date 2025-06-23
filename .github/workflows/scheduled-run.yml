@@ -2,7 +2,7 @@ name: Scheduled JavaScript Run
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Runs every hour
+    - cron: '*/5 * * * *'  # Runs every hour
   workflow_dispatch:      # Allows manual trigger from the GitHub UI
 
 jobs:
