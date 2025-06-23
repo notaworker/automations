@@ -1,0 +1,22 @@
+name: Run Price Trigger Script
+
+on:
+  schedule:
+    - cron: '0 * * * *' # every hour
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    env:
+      GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm install node-fetch
+      - name: Run script
+        run: node your-script.js
