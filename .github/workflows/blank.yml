@@ -1,0 +1,23 @@
+
+name: Scheduled JavaScript Run
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Runs every hour
+  workflow_dispatch:      # Allows manual trigger from the GitHub UI
+
+jobs:
+  run-js:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Run JavaScript file
+        run: node hello.js
