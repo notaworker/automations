@@ -1,0 +1,15 @@
+{
+  "name": "automations",
+  "version": "1.0.0",
+  "description": "A Node.js project using ES modules and node-fetch v3",
+  "type": "module",
+  "main": "your-script.mjs",
+  "scripts": {
+    "start": "node your-script.mjs"
+  },
+  "dependencies": {
+    "node-fetch": "^3.0.0"
+  },
+  "author": "",
+  "license": "ISC"
+}
