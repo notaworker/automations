@@ -19,4 +19,4 @@ jobs:
       - name: Install dependencies
         run: npm install node-fetch
       - name: Run script
-        run: node your-script.js
+        run: node your-script.mjs
