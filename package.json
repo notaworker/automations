@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "A Node.js project using ES modules and node-fetch v3",
   "type": "module",
-  "main": "your-script.mjs",
+  "main": "grow.mjs",
   "scripts": {
-    "start": "node your-script.mjs"
+    "start": "node grow.mjs"
   },
   "dependencies": {
     "node-fetch": "^3.0.0"
