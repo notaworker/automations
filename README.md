@@ -1,2 +1,2 @@
-# growatt automations
+# grow automations
 Trying to build something :)
