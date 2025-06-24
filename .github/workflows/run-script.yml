@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Node.js
+      - name: Set up grow.mjs
         uses: actions/setup-node@v3
         with:
           node-version: '18'
@@ -23,4 +23,4 @@ jobs:
         run: npm install
 
       - name: Run script
-        run: node your-script.mjs
+        run: node grow.mjs
