@@ -11,35 +11,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
-          python-version: '3.x'
+          node-version: '16'
 
       - name: Install dependencies
-        run: pip install secure-smtplib
+        run: npm install nodemailer
 
       - name: Send test email
         env:
-          GMAIL_ADDRESS: ${{ secrets.EMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.EMAIL_PASS }}
-          TO_EMAIL: ${{ secrets.EMAIL_RECIPIENT }}
-        run: |
-          python -c "
-import smtplib, ssl
-
-sender = '${{ secrets.EMAIL_USER }}'
-password = '${{ secrets.EMAIL_PASS }}'
-receiver = '${{ secrets.EMAIL_RECIPIENT }}'
-
-message = '''\
-Subject: GitHub Actions Test Email
-
-This is a test email sent from GitHub Actions using a Google App Password.'''
-
-context = ssl.create_default_context()
-with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as server:
-    server.login(sender, password)
-    server.sendmail(sender, receiver, message)
-print('Email sent successfully!')
-"
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+        run: node send_email.js
