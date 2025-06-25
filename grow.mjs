@@ -1,20 +1,25 @@
 import fetch, { Headers } from "node-fetch";
 import nodemailer from "nodemailer";
 
-// ... (your existing date and API setup)
+// Use the same secret names as send-email.js for consistency:
+const user = process.env.GMAIL_USER;              // GMAIL_USER
+const pass = process.env.GMAIL_APP_PASSWORD;      // GMAIL_APP_PASSWORD
+const recipient = process.env.EMAIL_RECIPIENT;    // EMAIL_RECIPIENT
+
+const API_URL = process.env.API_URL; // Optionally set this as a secret too!
 
 async function sendEmail(priceValue) {
   const transporter = nodemailer.createTransport({
-    service: "gmail", // or another email service
+    service: "gmail",
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      user,
+      pass,
     },
   });
 
   const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: process.env.EMAIL_RECIPIENT,
+    from: user,
+    to: recipient,
     subject: "Negative Electricity Price Alert",
     text: `Alert: The electricity price is negative (${priceValue} SEK/kWh). Powering off the device.`,
   };
@@ -25,6 +30,11 @@ async function sendEmail(priceValue) {
   } catch (error) {
     console.error("Error sending email:", error);
   }
+}
+
+async function sendTrigger(value) {
+  // Placeholder: implement your own trigger logic here
+  console.log(`Trigger sent with value: ${value}`);
 }
 
 async function getCurrentHourPrice() {
