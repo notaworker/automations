@@ -19,7 +19,7 @@ jobs:
           password: ${{ secrets.SMTP_PASSWORD }}
           subject: 🚀 GitHub Action Notification
           to: v75bong@gmail.com
-          from: 907ac7001@smtp-brevo.com
+          from: v75bong@gmail.com
           body: |
             Hello,
 
