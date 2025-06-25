@@ -1,5 +1,8 @@
 name: Test Email Function
-
+permissions:
+  contents: read
+  pull-requests: write
+  
 on:
   workflow_dispatch:  # Allows manual trigger from GitHub UI
   push:               # Optional: runs on every push to the repo
