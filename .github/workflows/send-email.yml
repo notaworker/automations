@@ -18,8 +18,8 @@ jobs:
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
           subject: 🚀 GitHub Action Notification
-          to: recipient@example.com
-          from: sender@example.com
+          to: v75bong@gmail.com
+          from: 907ac7001@smtp-brevo.com
           body: |
             Hello,
 
