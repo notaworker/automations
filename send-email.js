@@ -11,7 +11,7 @@ async function main() {
 
   await transporter.sendMail({
     from: user,
-    to: 'recipient@example.com', // CHANGE THIS!
+    to: 'v75bong@gmail.com', // CHANGE THIS!
     subject: 'Test Email from GitHub Actions',
     text: 'This is a test email sent from a GitHub Actions workflow!',
   });
