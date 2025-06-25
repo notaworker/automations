@@ -102,16 +102,16 @@ async function getCurrentHourPrice() {
       // Negative price
       console.log("The price is negative!");
       await sendEmail(
-        "Elpris: Negativt pris",
-        `Priset är negativt (${priceValue} SEK/kWh) just nu.`
+        "Alert: The electricity price is negative. Powering off the device.",
+        `The electricity price is negative (${priceValue} SEK/kWh).`
       );
       await sendTrigger("0");
     } else {
       // Positive price
       console.log("The price is positive or zero.");
       await sendEmail(
-        "Elpris: Positivt pris",
-        `Priset är positivt (${priceValue} SEK/kWh) just nu.`
+        "The electricity price is Positive. Lets Powering on the Solar Inverter",
+        `The electricity price is positive (${priceValue} SEK/kWh).`
       );
       await sendTrigger("1");
     }
