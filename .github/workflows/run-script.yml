@@ -28,3 +28,6 @@ jobs:
 
       - name: Run script
         run: node grow.mjs
+        
+      - name: Install dependencies
+        run: npm install
