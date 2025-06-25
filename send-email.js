@@ -1,4 +1,4 @@
-const nodemailer = require('nodemailer');
+import nodemailer from 'nodemailer';
 
 const user = process.env.GMAIL_USER;
 const pass = process.env.GMAIL_APP_PASSWORD;
@@ -11,7 +11,7 @@ async function main() {
 
   await transporter.sendMail({
     from: user,
-    to: 'v75bong@gmail.com', // CHANGE THIS!
+    to: 'recipient@example.com', // CHANGE THIS!
     subject: 'Test Email from GitHub Actions',
     text: 'This is a test email sent from a GitHub Actions workflow!',
   });
