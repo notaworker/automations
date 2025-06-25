@@ -2,7 +2,10 @@ name: Send Email
 
 on:
   workflow_dispatch:
-
+  
+permissions:
+  contents: read
+  
 jobs:
   send_email:
     runs-on: ubuntu-latest
