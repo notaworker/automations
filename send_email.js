@@ -1,21 +1,12 @@
-const nodemailer = require('nodemailer');
+import nodemailer from 'nodemailer';
 
-// Get environment variables
 const senderEmail = process.env.GMAIL_ADDRESS;
 const appPassword = process.env.GMAIL_APP_PASSWORD;
 const receiverEmail = process.env.TO_EMAIL;
 
-// Create the email content
 const subject = "GitHub Actions Test Email";
 const body = "This is a test email sent from GitHub Actions using a Google App Password.";
-const message = {
-  from: senderEmail,
-  to: receiverEmail,
-  subject: subject,
-  text: body
-};
 
-// Send the email
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -24,9 +15,17 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+const message = {
+  from: senderEmail,
+  to: receiverEmail,
+  subject: subject,
+  text: body
+};
+
 transporter.sendMail(message, (error, info) => {
   if (error) {
-    return console.log('Error:', error);
+    console.error('Error:', error);
+  } else {
+    console.log('Email sent successfully:', info.response);
   }
-  console.log('Email sent successfully:', info.response);
 });
