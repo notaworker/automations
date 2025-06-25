@@ -1,27 +1,32 @@
-name: Test Gmail App Password
+const nodemailer = require('nodemailer');
 
-on:
-  workflow_dispatch:
+// Get environment variables
+const senderEmail = process.env.GMAIL_ADDRESS;
+const appPassword = process.env.GMAIL_APP_PASSWORD;
+const receiverEmail = process.env.TO_EMAIL;
 
-jobs:
-  send-email:
-    runs-on: ubuntu-latest
+// Create the email content
+const subject = "GitHub Actions Test Email";
+const body = "This is a test email sent from GitHub Actions using a Google App Password.";
+const message = {
+  from: senderEmail,
+  to: receiverEmail,
+  subject: subject,
+  text: body
+};
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+// Send the email
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: senderEmail,
+    pass: appPassword
+  }
+});
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '16'
-
-      - name: Install dependencies
-        run: npm install nodemailer
-
-      - name: Send test email
-        env:
-          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          TO_EMAIL: ${{ secrets.TO_EMAIL }}
-        run: node send_email.js
+transporter.sendMail(message, (error, info) => {
+  if (error) {
+    return console.log('Error:', error);
+  }
+  console.log('Email sent successfully:', info.response);
+});
