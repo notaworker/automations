@@ -1,48 +1,82 @@
 import fetch, { Headers } from "node-fetch";
 import nodemailer from "nodemailer";
 
-// Use the same secret names as send-email.js for consistency:
-const user = process.env.GMAIL_USER;              // GMAIL_USER
-const pass = process.env.GMAIL_APP_PASSWORD;      // GMAIL_APP_PASSWORD
-const recipient = process.env.EMAIL_RECIPIENT;    // EMAIL_RECIPIENT
+// Build today's date in format YYYY/MM-DD
+const today = new Date();
+const year = today.getFullYear();
+const month = String(today.getMonth() + 1).padStart(2, "0");
+const day = String(today.getDate()).padStart(2, "0");
+const API_URL = `https://www.elprisetjustnu.se/api/v1/prices/${year}/${month}-${day}_SE3.json`;
 
-const API_URL = process.env.API_URL; // Optionally set this as a secret too!
+console.log("Fetching data from:", API_URL);
 
-async function sendEmail(priceValue, isNegative) {
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user,
-      pass,
-    },
-  });
+// Email setup (Gmail SMTP)
+// Be sure to set GMAIL_USER, GMAIL_APP_PASSWORD, and EMAIL_RECIPIENT in your environment
+const GMAIL_USER = process.env.GMAIL_USER;
+const GMAIL_PASS = process.env.GMAIL_APP_PASSWORD;
+const EMAIL_RECIPIENT = process.env.EMAIL_RECIPIENT;
 
-  const subject = isNegative
-    ? "Negative Electricity Price Alert"
-    : "Positive Electricity Price Notification";
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: GMAIL_USER,
+    pass: GMAIL_PASS,
+  },
+});
 
-  const text = isNegative
-    ? `Alert: The electricity price is negative (${priceValue} SEK/kWh). Powering off the device.`
-    : `Notice: The electricity price is positive (${priceValue} SEK/kWh). Device will remain powered on.`;
+async function sendEmail(subject, text) {
+  if (!GMAIL_USER || !GMAIL_PASS || !EMAIL_RECIPIENT) {
+    console.error("Missing GMAIL_USER, GMAIL_APP_PASSWORD, or EMAIL_RECIPIENT environment variables.");
+    return;
+  }
 
   const mailOptions = {
-    from: user,
-    to: recipient,
+    from: GMAIL_USER,
+    to: EMAIL_RECIPIENT,
     subject,
     text,
   };
 
   try {
-    await transporter.sendMail(mailOptions);
-    console.log("Email sent successfully.");
+    let info = await transporter.sendMail(mailOptions);
+    console.log("Email sent:", info.response);
   } catch (error) {
     console.error("Error sending email:", error);
   }
 }
 
 async function sendTrigger(value) {
-  // Placeholder: implement your own trigger logic here
-  console.log(`Trigger sent with value: ${value}`);
+  const token = process.env.GROWATT_API_TOKEN;
+  const deviceSn = process.env.GROWATT_DEVICE_SN;
+
+  if (!token || !deviceSn) {
+    console.error("Missing required environment variables.");
+    return;
+  }
+
+  const myHeaders = new Headers();
+  myHeaders.append("token", token);
+  myHeaders.append("Content-Type", "application/x-www-form-urlencoded");
+
+  const urlencoded = new URLSearchParams();
+  urlencoded.append("deviceSn", deviceSn);
+  urlencoded.append("deviceType", "inv");
+  urlencoded.append("value", value); // "0" or "1"
+
+  const requestOptions = {
+    method: "POST",
+    headers: myHeaders,
+    body: urlencoded,
+    redirect: "follow",
+  };
+
+  try {
+    const response = await fetch("https://openapi.growatt.com/v4/new-api/setOnOrOff", requestOptions);
+    const result = await response.text();
+    console.log(`Trigger Response (value=${value}):`, result);
+  } catch (error) {
+    console.error("Error sending trigger:", error);
+  }
 }
 
 async function getCurrentHourPrice() {
@@ -64,14 +98,22 @@ async function getCurrentHourPrice() {
     const priceValue = priceInfo.SEK_per_kWh;
     console.log("Current price:", priceValue);
 
-    if (priceValue < -0.10) {
-      console.log("Negative price detected. Powering off the device.");
+    if (priceValue < 0) {
+      // Negative price
+      console.log("The price is negative!");
+      await sendEmail(
+        "Elpris: Negativt pris",
+        `Priset är negativt (${priceValue} SEK/kWh) just nu.`
+      );
       await sendTrigger("0");
-      await sendEmail(priceValue, true);
     } else {
-      console.log("The value is not significantly negative, so let's chill");
+      // Positive price
+      console.log("The price is positive or zero.");
+      await sendEmail(
+        "Elpris: Positivt pris",
+        `Priset är positivt (${priceValue} SEK/kWh) just nu.`
+      );
       await sendTrigger("1");
-      await sendEmail(priceValue, false);
     }
   } catch (error) {
     console.error("Error fetching price data:", error);
