@@ -70,10 +70,27 @@ async function sendTrigger(value) {
     redirect: "follow",
   };
 
+   // Extra debug info
+  console.log("=== Growatt API Debug Info ===");
+  console.log("Endpoint: https://openapi.growatt.com/v4/new-api/setOnOrOff");
+  console.log("Request Headers:", Object.fromEntries(myHeaders.entries()));
+  console.log("Request Body:", urlencoded.toString());
+  console.log("Request Method:", requestOptions.method);
+
   try {
     const response = await fetch("https://openapi.growatt.com/v4/new-api/setOnOrOff", requestOptions);
-    const result = await response.text();
-    console.log(`Trigger Response (value=${value}):`, result);
+    const resultText = await response.text();
+    let result;
+    try {
+      result = JSON.parse(resultText);
+    } catch (parseErr) {
+      result = resultText;
+    }
+    console.log("HTTP Status:", response.status, response.statusText);
+    console.log("Trigger Response (value=" + value + "):", result);
+    if (response.status !== 200) {
+      console.error("Non-200 status from Growatt API:", response.status);
+    }
   } catch (error) {
     console.error("Error sending trigger:", error);
   }
