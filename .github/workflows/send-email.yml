@@ -1,31 +1,22 @@
-name: Send Email Notification
+name: Send Email
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   send_email:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Send email via Brevo SMTP
-        uses: dawidd6/action-send-mail@v3
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          server_address: smtp-relay.brevo.com
-          server_port: 587
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: 🚀 GitHub Action Notification
-          to: v75bong@gmail.com
-          from: v75bong@gmail.com
-          body: |
-            Hello,
-
-            This is an automated email sent from a GitHub Action using Brevo SMTP.
-
-            ✅ The workflow ran successfully on the `main` branch.
-
-            Cheers,
-            GitHub Actions Bot
+          node-version: '20'
+      - name: Install dependencies
+        run: npm install nodemailer
+      - name: Send email
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: node send-email.js
