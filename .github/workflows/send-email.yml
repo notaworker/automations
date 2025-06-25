@@ -1,27 +1,31 @@
-name: Test Gmail App Password
+name: Send Email Notification
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
-  send-email:
+  send_email:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Send email via Brevo SMTP
+        uses: dawidd6/action-send-mail@v3
         with:
-          node-version: '16'
+          server_address: smtp-relay.brevo.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: 🚀 GitHub Action Notification
+          to: recipient@example.com
+          from: sender@example.com
+          body: |
+            Hello,
 
-      - name: Install dependencies
-        run: npm install nodemailer
+            This is an automated email sent from a GitHub Action using Brevo SMTP.
 
-      - name: Send test email
-        env:
-          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          TO_EMAIL: ${{ secrets.TO_EMAIL }}
-        run: node send_email.js
+            ✅ The workflow ran successfully on the `main` branch.
+
+            Cheers,
+            GitHub Actions Bot
