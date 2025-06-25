@@ -1,26 +1,32 @@
-import nodemailer from 'nodemailer';
+const nodemailer = require('nodemailer');
 
-const apiKey = process.env.SENDGRID_API_KEY;
-const recipient = process.env.EMAIL_RECIPIENT;
+// Get environment variables
+const senderEmail = process.env.GMAIL_ADDRESS;
+const appPassword = process.env.GMAIL_APP_PASSWORD;
+const receiverEmail = process.env.TO_EMAIL;
 
-async function main() {
-  let transporter = nodemailer.createTransport({
-    service: 'SendGrid',
-    auth: { user: 'apikey', pass: apiKey }
-  });
+// Create the email content
+const subject = "GitHub Actions Test Email";
+const body = "This is a test email sent from GitHub Actions using a Google App Password.";
+const message = {
+  from: senderEmail,
+  to: receiverEmail,
+  subject: subject,
+  text: body
+};
 
-  try {
-    let info = await transporter.sendMail({
-      from: `"GitHub Actions Test" <your_verified_sendgrid_email@example.com>`,
-      to: recipient,
-      subject: "GitHub Actions SendGrid Test",
-      text: "This is a test email sent from GitHub Actions using SendGrid."
-    });
-    console.log("✅ Email sent:", info.response);
-  } catch (err) {
-    console.error("❌ Error sending test email:", err);
-    process.exit(1);
+// Send the email
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: senderEmail,
+    pass: appPassword
   }
-}
+});
 
-main();
+transporter.sendMail(message, (error, info) => {
+  if (error) {
+    return console.log('Error:', error);
+  }
+  console.log('Email sent successfully:', info.response);
+});
