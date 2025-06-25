@@ -15,6 +15,10 @@ jobs:
     env:
       GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
       GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+    
     steps:
       - uses: actions/checkout@v3
 
