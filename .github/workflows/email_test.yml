@@ -1,33 +1,22 @@
-name: Test Email Function
-permissions:
-  contents: read
-  pull-requests: write
-  
+name: Test Gmail App Password
+
 on:
-  workflow_dispatch:  # Allows manual trigger from GitHub UI
-  push:               # Optional: runs on every push to the repo
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   send-email:
     runs-on: ubuntu-latest
-
+    env:
+      EMAIL_USER: ${{ secrets.EMAIL_USER }}
+      EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+      EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
+      - uses: actions/checkout@v4
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
-
+          node-version: '20'
       - name: Install dependencies
-        run: npm install
-
-      - name: Run email test
-        env:
-          EMAIL_USER: ${{ secrets.EMAIL_USER }}
-          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+        run: npm install nodemailer
+      - name: Send test email
         run: node email_test.js
