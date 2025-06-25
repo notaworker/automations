@@ -8,7 +8,7 @@ const recipient = process.env.EMAIL_RECIPIENT;    // EMAIL_RECIPIENT
 
 const API_URL = process.env.API_URL; // Optionally set this as a secret too!
 
-async function sendEmail(priceValue) {
+async function sendEmail(priceValue, isNegative) {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -17,11 +17,19 @@ async function sendEmail(priceValue) {
     },
   });
 
+  const subject = isNegative
+    ? "Negative Electricity Price Alert"
+    : "Positive Electricity Price Notification";
+
+  const text = isNegative
+    ? `Alert: The electricity price is negative (${priceValue} SEK/kWh). Powering off the device.`
+    : `Notice: The electricity price is positive (${priceValue} SEK/kWh). Device will remain powered on.`;
+
   const mailOptions = {
     from: user,
     to: recipient,
-    subject: "Negative Electricity Price Alert",
-    text: `Alert: The electricity price is negative (${priceValue} SEK/kWh). Powering off the device.`,
+    subject,
+    text,
   };
 
   try {
@@ -59,10 +67,11 @@ async function getCurrentHourPrice() {
     if (priceValue < -0.10) {
       console.log("Negative price detected. Powering off the device.");
       await sendTrigger("0");
-      await sendEmail(priceValue);
+      await sendEmail(priceValue, true);
     } else {
       console.log("The value is not significantly negative, so let's chill");
       await sendTrigger("1");
+      await sendEmail(priceValue, false);
     }
   } catch (error) {
     console.error("Error fetching price data:", error);
