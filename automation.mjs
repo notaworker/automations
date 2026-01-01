@@ -2,6 +2,7 @@ import fetch, { Headers } from "node-fetch";
 import nodemailer from "nodemailer";
 import { createClient } from "graphql-ws";
 import WebSocket from "ws";
+import fs from "fs";
 
 // ─────────────────────────────────────────────────────────────
 // ENVIRONMENT VARIABLES
@@ -202,6 +203,22 @@ async function getTibberPower() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// STATE MEMORY
+// ─────────────────────────────────────────────────────────────
+
+function getLastState() {
+  try {
+    return fs.readFileSync(".growatt_state", "utf8").trim();
+  } catch {
+    return "ON"; // default if file missing
+  }
+}
+
+function saveState(state) {
+  fs.writeFileSync(".growatt_state", state);
+}
+
+// ─────────────────────────────────────────────────────────────
 // MAIN LOGIC
 // ─────────────────────────────────────────────────────────────
 
@@ -226,15 +243,27 @@ async function main() {
   const powerNegative = power < -50;
 
   let desiredState = "1"; // default ON
-
   if (priceNegative && powerNegative) {
     desiredState = "0"; // OFF
   }
 
-  console.log("Growatt should be:", desiredState === "0" ? "OFF" : "ON");
+  const lastState = getLastState();
+  console.log("Last Growatt state:", lastState);
+  console.log("Desired Growatt state:", desiredState === "0" ? "OFF" : "ON");
 
+  // NEW LOGIC: Only send ON if previously OFF
+  if (desiredState === "1" && lastState === "ON") {
+    console.log("Growatt already ON — skipping ON command.");
+    return;
+  }
+
+  // Always allow OFF
   await sendTrigger(desiredState);
 
+  // Save new state
+  saveState(desiredState === "0" ? "OFF" : "ON");
+
+  // Email on state change
   await sendEmail(
     `Growatt state changed → ${desiredState === "0" ? "OFF" : "ON"}`,
     `Price: ${price} SEK/kWh\nPower: ${power} W\nAction: ${
