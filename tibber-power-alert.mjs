@@ -5,7 +5,7 @@
 import { createClient } from 'graphql-ws';
 import nodemailer from 'nodemailer';
 import fetch from 'node-fetch';
-import WebSocket from 'ws'; // <-- IMPORTANT: import ws for Node
+import WebSocket from 'ws'; // Node WebSocket implementation
 
 // ── Env configuration ──────────────────────────────────────────────────────────
 const TIBBER_TOKEN = process.env.TIBBER_TOKEN;
@@ -38,9 +38,13 @@ function assertEnv() {
   }
 }
 
+// ── HTTPS endpoint (your requested URL) ────────────────────────────────────────
+// Tibber docs: queries/mutations -> https://api.tibber.com/v1-beta/gql
+// From there, fetch viewer.websocketSubscriptionUrl for subscriptions. [1](https://developer.tibber.com/docs/guides/calling-api)
+const HTTP_GRAPHQL_ENDPOINT = 'https://api.tibber.com/v1-beta/gql';
+
 // ── Fetch Tibber websocketSubscriptionUrl (HTTPS) ──────────────────────────────
 async function getWebsocketSubscriptionUrl() {
-  const httpEndpoint = 'https://api.tibber.com/v1-beta/gql';
   const body = {
     query: `
       query GetSubUrl {
@@ -51,7 +55,7 @@ async function getWebsocketSubscriptionUrl() {
     `
   };
 
-  const res = await fetch(httpEndpoint, {
+  const res = await fetch(HTTP_GRAPHQL_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -127,7 +131,8 @@ async function run() {
   // Provide WebSocket implementation for Node via ws
   const client = createClient({
     url: wsUrl,
-    webSocketImpl: WebSocket,           // <-- CRITICAL: this resolves your error
+    webSocketImpl: WebSocket,           // <-- CRITICAL for Node
+    // Tibber requires connection_init payload with token for subscriptions. [2](https://www.powershellgallery.com/packages/PSTibber/0.3.0/Content/functions%5CConnect-TibberWebSocket.ps1)
     connectionParams: { token: TIBBER_TOKEN },
     retryAttempts: 10,
     shouldRetry: () => true
