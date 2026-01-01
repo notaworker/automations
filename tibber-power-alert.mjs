@@ -1,40 +1,30 @@
 
 // tibber-power-alert.mjs
-// Node.js 18+ (ESM). Requires deps: graphql-ws, nodemailer, node-fetch (v3).
+// Node.js 18+ (ESM). Requires: graphql-ws, nodemailer, node-fetch v3, ws.
 
 import { createClient } from 'graphql-ws';
 import nodemailer from 'nodemailer';
 import fetch from 'node-fetch';
+import WebSocket from 'ws'; // <-- IMPORTANT: import ws for Node
 
-// ───────────────────────────────────────────────────────────────────────────────
-// Environment configuration
-// ───────────────────────────────────────────────────────────────────────────────
-
-// Tibber
+// ── Env configuration ──────────────────────────────────────────────────────────
 const TIBBER_TOKEN = process.env.TIBBER_TOKEN;
-const HOME_ID = process.env.TIBBER_HOME_ID; // required
+const HOME_ID = process.env.TIBBER_HOME_ID;
 
-// Gmail-based email (as requested)
-const EMAIL_RECIPIENT = process.env.EMAIL_RECIPIENT;          // recipient
-const GMAIL_USER = process.env.GMAIL_USER;                    // your Gmail address (sender)
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;    // app-specific password
+// Gmail-based email
+const EMAIL_RECIPIENT = process.env.EMAIL_RECIPIENT;
+const GMAIL_USER = process.env.GMAIL_USER;
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 
-// SMTP details for Gmail
 const SMTP_HOST = 'smtp.gmail.com';
-const SMTP_PORT = Number(process.env.SMTP_PORT || 465);       // 465 (SSL) by default
-const MAIL_FROM = process.env.MAIL_FROM || GMAIL_USER;        // optional override
+const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
+const MAIL_FROM = process.env.MAIL_FROM || GMAIL_USER;
 
-// Behavior knobs
-const POWER_THRESHOLD = Number(process.env.POWER_THRESHOLD || 100); // W
-const MAX_RUNTIME_SEC = Number(process.env.MAX_RUNTIME_SEC || 600); // 10 min
-
-// Optional: simple cooldown between alert emails (seconds). Set to 0 to disable.
+const POWER_THRESHOLD = Number(process.env.POWER_THRESHOLD || 100);
+const MAX_RUNTIME_SEC = Number(process.env.MAX_RUNTIME_SEC || 600);
 const ALERT_COOLDOWN_SEC = Number(process.env.ALERT_COOLDOWN_SEC || 0);
 let lastAlertTs = 0;
 
-// ───────────────────────────────────────────────────────────────────────────────
-// Validation
-// ───────────────────────────────────────────────────────────────────────────────
 function assertEnv() {
   const missing = [];
   if (!TIBBER_TOKEN)       missing.push('TIBBER_TOKEN');
@@ -42,14 +32,13 @@ function assertEnv() {
   if (!EMAIL_RECIPIENT)    missing.push('EMAIL_RECIPIENT');
   if (!GMAIL_USER)         missing.push('GMAIL_USER');
   if (!GMAIL_APP_PASSWORD) missing.push('GMAIL_APP_PASSWORD');
-
   if (missing.length) {
     console.error(`Missing environment variables: ${missing.join(', ')}`);
     process.exit(1);
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
+// ── Fetch Tibber websocketSubscriptionUrl (HTTPS) ──────────────────────────────
 async function getWebsocketSubscriptionUrl() {
   const httpEndpoint = 'https://api.tibber.com/v1-beta/gql';
   const body = {
@@ -66,7 +55,6 @@ async function getWebsocketSubscriptionUrl() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      // Tibber HTTPS auth uses Bearer token
       Authorization: `Bearer ${TIBBER_TOKEN}`
     },
     body: JSON.stringify(body)
@@ -84,7 +72,7 @@ async function getWebsocketSubscriptionUrl() {
   return url;
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
+// ── Email helpers (Gmail SMTP) ─────────────────────────────────────────────────
 function createMailTransporter() {
   return nodemailer.createTransport({
     host: SMTP_HOST,
@@ -95,7 +83,6 @@ function createMailTransporter() {
 }
 
 async function sendAlertEmail({ timestamp, power }) {
-  // Cooldown guard
   const now = Date.now();
   if (ALERT_COOLDOWN_SEC > 0 && now - lastAlertTs < ALERT_COOLDOWN_SEC * 1000) {
     console.log(`⏳ Alert suppressed by cooldown (${ALERT_COOLDOWN_SEC}s).`);
@@ -130,17 +117,17 @@ Value: ${power}W`;
   console.log(`📧 Sent alert → ${EMAIL_RECIPIENT} (power=${power}W)`);
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
+// ── Main ───────────────────────────────────────────────────────────────────────
 async function run() {
   assertEnv();
 
   const wsUrl = await getWebsocketSubscriptionUrl();
   console.log(`Connecting to Tibber WebSocket: ${wsUrl}`);
 
-  // Tibber subscriptions use GraphQL over WebSocket (graphql-transport-ws).
-  // We authenticate via connection_init payload { token: <TIBBER_TOKEN> }.
+  // Provide WebSocket implementation for Node via ws
   const client = createClient({
     url: wsUrl,
+    webSocketImpl: WebSocket,           // <-- CRITICAL: this resolves your error
     connectionParams: { token: TIBBER_TOKEN },
     retryAttempts: 10,
     shouldRetry: () => true
