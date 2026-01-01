@@ -27,7 +27,7 @@ const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 
 // REQUIRED by Tibber: a versioned User-Agent for HTTPS & WS handshakes
-// Set this in your workflow env; the default below is acceptable but you can improve it.
+// Set this in your workflow env; adjust to identify your client + versions.
 const USER_AGENT =
   process.env.USER_AGENT ||
   'automations/1.0 (GitHub Actions) graphql-ws/6.0.6 ws/8.17.0';
@@ -52,7 +52,7 @@ function assertEnv() {
   if (!TIBBER_TOKEN) missing.push('TIBBER_TOKEN');
   if (!HOME_ID) missing.push('TIBBER_HOME_ID');
 
-  // Email alert requires these (skip if you do not use email alerts)
+  // Email alert requires these (skip if not provided)
   const emailConfigProvided =
     EMAIL_RECIPIENT && GMAIL_USER && GMAIL_APP_PASSWORD;
 
@@ -70,6 +70,7 @@ function assertEnv() {
 
 // ───────────────────────────────────────────────────────────────────────────────
 // HTTPS endpoint to bootstrap subscriptions (queries/mutations live here)
+// Per Tibber docs, use this HTTPS endpoint to obtain websocketSubscriptionUrl. [1](https://tibberpy.readthedocs.io/en/latest/getting_started.html)
 const HTTP_GRAPHQL_ENDPOINT = 'https://api.tibber.com/v1-beta/gql';
 
 // Fetch Tibber websocketSubscriptionUrl via HTTPS (with Bearer + User-Agent)
@@ -159,6 +160,21 @@ Value: ${power}W`;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+// WebSocket implementation with headers (constructor expected by graphql-ws)
+//
+// graphql-ws expects a *constructor/class* it can `new`. To inject Tibber's
+// required User-Agent header, we subclass ws and set headers in super(...). 
+class HeaderWebSocket extends WebSocket {
+  constructor(url, protocols) {
+    super(url, protocols, {
+      headers: {
+        'User-Agent': USER_AGENT,
+      },
+    });
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 // Main
 // ───────────────────────────────────────────────────────────────────────────────
 async function run() {
@@ -169,16 +185,10 @@ async function run() {
   console.log(`Connecting to Tibber WebSocket: ${wsUrl}`);
 
   // 2) Open subscription over WebSocket using graphql-transport-ws
-  //    Pass a versioned User-Agent header during the handshake.
+  //    Pass the HeaderWebSocket class as webSocketImpl (constructor).
   const client = createClient({
     url: wsUrl,
-    // Provide WS implementation and inject handshake headers
-    webSocketImpl: (url, protocols) =>
-      new WebSocket(url, protocols, {
-        headers: {
-          'User-Agent': USER_AGENT, // <- Tibber requires it on the WS handshake
-        },
-      }),
+    webSocketImpl: HeaderWebSocket, // <- valid constructor, injects headers
     // Tibber expects the token in connection_init payload (not as a WS header)
     connectionParams: { token: TIBBER_TOKEN },
     retryAttempts: 10,
@@ -214,7 +224,11 @@ async function run() {
           // Optional email alert when power exceeds threshold
           const emailConfigProvided =
             EMAIL_RECIPIENT && GMAIL_USER && GMAIL_APP_PASSWORD;
-          if (emailConfigProvided && typeof power === 'number' && power > POWER_THRESHOLD) {
+          if (
+            emailConfigProvided &&
+            typeof power === 'number' &&
+            power > POWER_THRESHOLD
+          ) {
             try {
               await sendAlertEmail({ timestamp, power });
             } catch (err) {
@@ -251,3 +265,4 @@ run().catch((err) => {
   console.error('Fatal:', err);
   process.exit(1);
 });
+``
