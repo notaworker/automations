@@ -1,0 +1,40 @@
+
+name: Tibber Power Alert
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 minutes; adjust as needed
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12   # guardrail for the whole job
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Tibber subscription alert
+        env:
+          # Secrets — set these in repo Settings → Secrets and variables → Actions
+          TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
+          TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}  # now a secret
+          MAIL_TO: ${{ secrets.MAIL_TO }}                # now a secret
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}            # optional secret
+
+          # Non-secret runtime knobs (make them secrets if you prefer)
+          POWER_THRESHOLD: "100"
+          MAX_RUNTIME_SEC: "600"
+        run: npm run tibber-alert
