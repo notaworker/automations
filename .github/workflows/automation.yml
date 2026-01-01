@@ -2,8 +2,8 @@ name: Energy Automation
 
 on:
   schedule:
-    # Runs every hour at minute 5 — adjust as needed
-    - cron: "5 * * * *"
+    # Runs every hour at minute 15 — adjust as needed
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 jobs:
