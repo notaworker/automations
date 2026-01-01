@@ -2,31 +2,24 @@
 name: Tibber Power Alert
 
 on:
-  # Run manually from the Actions tab
   workflow_dispatch:
-  # Scheduled runs (every 15 minutes). Adjust as needed.
   schedule:
     - cron: "*/15 * * * *"
 
 jobs:
   alert:
     runs-on: ubuntu-latest
-    # Overall safety timeout for the job
     timeout-minutes: 12
 
     steps:
-      # 1) Checkout repository
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2) Setup Node.js (use Node 20 or 18+)
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # 3) (Optional) Cache npm to speed up installs across runs
-      #    Works best when you commit a package-lock.json, but still helps without.
       - name: Cache npm
         uses: actions/cache@v4
         with:
@@ -35,28 +28,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      # 4) Install dependencies WITHOUT requiring a lockfile
       - name: Install dependencies
         run: npm install --no-fund --no-audit
 
-      # 5) Run the Tibber subscription alert script
       - name: Run Tibber subscription alert
         env:
-          # Required Tibber secrets
           TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
           TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}
-
-          # Email (SMTP) secrets
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-
-          # Recipient and optional sender (as secrets)
-          MAIL_TO: ${{ secrets.MAIL_TO }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
-
-          # Runtime knobs (make these secrets too if you prefer)
-          POWER_THRESHOLD: "100"   # Watts
-          MAX_RUNTIME_SEC: "600"   # 10 minutes per run
+          POWER_THRESHOLD: "100"
+          MAX_RUNTIME_SEC: "600"
         run: node tibber-power-alert.mjs
