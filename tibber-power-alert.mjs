@@ -1,201 +1,79 @@
 
-// tibber-power-alert.mjs
-// Node.js 18+ (ESM). Requires: graphql-ws, nodemailer, node-fetch v3, ws.
+// tibber-power-query.mjs
+// Node 18+ (ESM). Dependencies: node-fetch v3 (already in your package.json).
 
-import { createClient } from 'graphql-ws';
-import nodemailer from 'nodemailer';
 import fetch from 'node-fetch';
-import WebSocket from 'ws'; // Node WebSocket implementation
 
-// ── Env configuration ──────────────────────────────────────────────────────────
 const TIBBER_TOKEN = process.env.TIBBER_TOKEN;
-const HOME_ID = process.env.TIBBER_HOME_ID;
+const TIBBER_HOME_ID = process.env.TIBBER_HOME_ID;
 
-// Gmail-based email
-const EMAIL_RECIPIENT = process.env.EMAIL_RECIPIENT;
-const GMAIL_USER = process.env.GMAIL_USER;
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
-
-const SMTP_HOST = 'smtp.gmail.com';
-const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
-const MAIL_FROM = process.env.MAIL_FROM || GMAIL_USER;
-
-const POWER_THRESHOLD = Number(process.env.POWER_THRESHOLD || 100);
-const MAX_RUNTIME_SEC = Number(process.env.MAX_RUNTIME_SEC || 600);
-const ALERT_COOLDOWN_SEC = Number(process.env.ALERT_COOLDOWN_SEC || 0);
-let lastAlertTs = 0;
-
-function assertEnv() {
-  const missing = [];
-  if (!TIBBER_TOKEN)       missing.push('TIBBER_TOKEN');
-  if (!HOME_ID)            missing.push('TIBBER_HOME_ID');
-  if (!EMAIL_RECIPIENT)    missing.push('EMAIL_RECIPIENT');
-  if (!GMAIL_USER)         missing.push('GMAIL_USER');
-  if (!GMAIL_APP_PASSWORD) missing.push('GMAIL_APP_PASSWORD');
-  if (missing.length) {
-    console.error(`Missing environment variables: ${missing.join(', ')}`);
-    process.exit(1);
-  }
+if (!TIBBER_TOKEN || !TIBBER_HOME_ID) {
+  console.error('Missing env: TIBBER_TOKEN and/or TIBBER_HOME_ID');
+  process.exit(1);
 }
 
-// ── HTTPS endpoint (your requested URL) ────────────────────────────────────────
-// Per Tibber docs: use this HTTPS endpoint for queries/mutations, including
-// fetching the websocketSubscriptionUrl for subscriptions. [1](https://developer.tibber.com/docs/guides/calling-api)
+// Tibber HTTPS GraphQL endpoint (queries & mutations)
 const HTTP_GRAPHQL_ENDPOINT = 'https://api.tibber.com/v1-beta/gql';
 
-// ── Fetch Tibber websocketSubscriptionUrl (HTTPS) ──────────────────────────────
-async function getWebsocketSubscriptionUrl() {
-  const body = {
-    query: `
-      query GetSubUrl {
-        viewer {
-          websocketSubscriptionUrl
+// This is a QUERY (no websocket). It returns the latest HOURLY energy consumption (kWh),
+// NOT the instantaneous power (W). Tibber exposes live power only via Subscription.  [2](https://developer.tibber.com/docs/reference)
+const QUERY = `
+  query LastHourlyConsumption($homeId: ID!) {
+    viewer {
+      home(id: $homeId) {
+        consumption(resolution: HOURLY, last: 1) {
+          nodes {
+            from
+            to
+            consumption   # kWh consumed in this hour
+            cost
+            currency
+          }
         }
       }
-    `
-  };
+    }
+  }
+`;
 
+async function main() {
   const res = await fetch(HTTP_GRAPHQL_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${TIBBER_TOKEN}`
+      // Tibber requires Bearer token on HTTPS calls.  [1](https://developer.tibber.com/docs/guides/calling-api)
+      Authorization: `Bearer ${TIBBER_TOKEN}`,
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify({
+      query: QUERY,
+      variables: { homeId: TIBBER_HOME_ID },
+    }),
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to get websocketSubscriptionUrl: ${res.status} ${res.statusText}`);
+    console.error(`HTTP ${res.status} ${res.statusText}`);
+    process.exit(1);
   }
 
   const json = await res.json();
-  const url = json?.data?.viewer?.websocketSubscriptionUrl;
-  if (!url || !url.startsWith('wss://')) {
-    throw new Error(`Invalid websocketSubscriptionUrl: ${url ?? '(none)'}`);
+
+  // Handle GraphQL errors (if any)
+  if (json.errors) {
+    console.error('GraphQL errors:', JSON.stringify(json.errors, null, 2));
+    process.exit(1);
   }
-  return url;
-}
 
-// ── Email helpers (Gmail SMTP) ─────────────────────────────────────────────────
-function createMailTransporter() {
-  return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_PORT === 465, // true for 465 (SSL), false for 587 (STARTTLS)
-    auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD }
-  });
-}
-
-async function sendAlertEmail({ timestamp, power }) {
-  const now = Date.now();
-  if (ALERT_COOLDOWN_SEC > 0 && now - lastAlertTs < ALERT_COOLDOWN_SEC * 1000) {
-    console.log(`⏳ Alert suppressed by cooldown (${ALERT_COOLDOWN_SEC}s).`);
+  const nodes = json?.data?.viewer?.home?.consumption?.nodes ?? [];
+  if (nodes.length === 0) {
+    console.log('No consumption data returned.');
     return;
   }
 
-  const transporter = createMailTransporter();
-  const subject = `⚡ Tibber Alert: Power ${power}W @ ${new Date(timestamp).toLocaleString()}`;
-  const text = `Power exceeded ${POWER_THRESHOLD}W
-Home: ${HOME_ID}
-Time: ${timestamp}
-Value: ${power}W`;
-  const html = `
-    <p><strong>Tibber Power Alert</strong></p>
-    <ul>
-      <li><b>Power:</b> ${power} W</li>
-      <li><b>Timestamp:</b> ${timestamp}</li>
-      <li><b>Home ID:</b> ${HOME_ID}</li>
-      <li><b>Threshold:</b> ${POWER_THRESHOLD} W</li>
-    </ul>
-  `;
-
-  await transporter.sendMail({
-    from: MAIL_FROM,
-    to: EMAIL_RECIPIENT,
-    subject,
-    text,
-    html
-  });
-
-  lastAlertTs = now;
-  console.log(`📧 Sent alert → ${EMAIL_RECIPIENT} (power=${power}W)`);
+  const last = nodes[0];
+  // This is energy (kWh) over the hour window, not instantaneous power.
+  console.log(`Last hourly consumption: ${last.consumption} kWh, window: ${last.from} → ${last.to}`);
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────────
-async function run() {
-  assertEnv();
-
-  // Step 1: HTTPS query to get the proper WSS subscription endpoint
-  const wsUrl = await getWebsocketSubscriptionUrl();
-  console.log(`Connecting to Tibber WebSocket: ${wsUrl}`);
-
-  // Step 2: Open subscription over WebSocket (required for liveMeasurement)
-  // Tibber requires connection_init payload with { token } for subscriptions. [3](https://www.powershellgallery.com/packages/PSTibber/0.3.0/Content/functions%5CConnect-TibberWebSocket.ps1)
-  const client = createClient({
-    url: wsUrl,
-    webSocketImpl: WebSocket, // Node needs an explicit WebSocket implementation
-    connectionParams: { token: TIBBER_TOKEN },
-    retryAttempts: 10,
-    shouldRetry: () => true
-  });
-
-  const SUBSCRIPTION = `
-    subscription {
-      liveMeasurement(homeId: "${HOME_ID}") {
-        timestamp
-        power
-      }
-    }
-  `;
-
-  const stopAt = Date.now() + MAX_RUNTIME_SEC * 1000;
-
-  await new Promise((resolve, reject) => {
-    let settled = false;
-
-    client.subscribe(
-      { query: SUBSCRIPTION },
-      {
-        next: async (payload) => {
-          const lm = payload?.data?.liveMeasurement;
-          if (!lm) return;
-
-          const { timestamp, power } = lm;
-          console.log(`📡 ${timestamp}: power=${power}W`);
-
-          if (typeof power === 'number' && power > POWER_THRESHOLD) {
-            try {
-              await sendAlertEmail({ timestamp, power });
-            } catch (err) {
-              console.error('Email send failed:', err);
-            }
-          }
-
-          if (Date.now() >= stopAt && !settled) {
-            settled = true;
-            resolve();
-          }
-        },
-        error: (err) => {
-          if (!settled) {
-            settled = true;
-            reject(err);
-          }
-        },
-        complete: () => {
-          if (!settled) {
-            settled = true;
-            resolve();
-          }
-        }
-      }
-    );
-  });
-
-  console.log('⏹️ MAX_RUNTIME reached, exiting.');
-}
-
-run().catch((err) => {
+main().catch((err) => {
   console.error('Fatal:', err);
   process.exit(1);
 });
