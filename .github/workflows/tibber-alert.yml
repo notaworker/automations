@@ -2,24 +2,30 @@
 name: Tibber Power Alert
 
 on:
+  # Run manually from the Actions tab
   workflow_dispatch:
+  # Optional: scheduled runs (every 15 minutes). Adjust or remove.
   schedule:
     - cron: "*/15 * * * *"
 
 jobs:
   alert:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 12   # safety guard for the whole job
 
     steps:
+      # 1) Checkout repository
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2) Setup Node.js (Node 20 recommended; Node 18+ works as well)
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
+      # 3) (Optional) Cache npm to speed up installs across runs
+      #    Works best when a package-lock.json is committed; still helpful otherwise.
       - name: Cache npm
         uses: actions/cache@v4
         with:
@@ -28,18 +34,32 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
+      # 4) Install dependencies (no lockfile required)
       - name: Install dependencies
         run: npm install --no-fund --no-audit
 
+      # 5) Run the Tibber subscription alert script
+      #    (Script requires a versioned User-Agent for BOTH HTTPS & WS handshakes.)
       - name: Run Tibber subscription alert
         env:
-         USER_AGENT: "automations/1.0 (GitHub Actions) graphql-ws/6.0.6 ws/8.17.0"
+          # Tibber secrets
           TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
           TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}
+
+          # Gmail-based email secrets
           EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          # Optional: specific "From" address (defaults to GMAIL_USER if empty)
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
-          POWER_THRESHOLD: "100"
-          MAX_RUNTIME_SEC: "600"
+
+          # REQUIRED by Tibber: a versioned User-Agent on both HTTPS & WS handshakes
+          # Use a value that identifies your client + versions.
+          USER_AGENT: "automations/1.0 (GitHub Actions) graphql-ws/6.0.6 ws/8.17.0"
+
+          # Runtime knobs (make these secrets too if you prefer)
+          POWER_THRESHOLD: "100"   # Watts; emails when power > threshold
+          MAX_RUNTIME_SEC: "600"   # 10 minutes per run
+          # Optional: suppress repeated emails while power stays high
+          # ALERT_COOLDOWN_SEC: "300"  # e.g., one email max every 5 minutes
         run: node tibber-power-alert.mjs
