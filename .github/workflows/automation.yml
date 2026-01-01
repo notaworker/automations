@@ -22,6 +22,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Debug Tibber env (optional)
+        env:
+          TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
+          TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}
+        run: |
+          echo "TIBBER_TOKEN length: ${#TIBBER_TOKEN}"
+          echo "TIBBER_HOME_ID: $TIBBER_HOME_ID"
+
       - name: Run automation script
         env:
           # Gmail
