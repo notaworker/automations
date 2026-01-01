@@ -1,35 +1,36 @@
 
 // tibber-power-alert.mjs
-// Node.js 18+ compatible (you already use ES modules). Uses node-fetch v3 for HTTPS calls.
+// Node.js 18+ compatible (ESM). Uses node-fetch v3 for HTTPS calls.
 
 import { createClient } from 'graphql-ws';
 import nodemailer from 'nodemailer';
 import fetch from 'node-fetch';
 
-// --- Env config ---
-// Required secrets:
+// --- Tibber secrets ---
 const TIBBER_TOKEN = process.env.TIBBER_TOKEN;
-const HOME_ID = process.env.TIBBER_HOME_ID;      // now secret-only (no fallback)
-const MAIL_TO = process.env.MAIL_TO;             // now secret-only (no fallback)
+const HOME_ID = process.env.TIBBER_HOME_ID; // keep as secret-only (no fallback)
 
-const SMTP_HOST = process.env.SMTP_HOST;
-const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
-const SMTP_USER = process.env.SMTP_USER;
-const SMTP_PASS = process.env.SMTP_PASS;
-const MAIL_FROM = process.env.MAIL_FROM || SMTP_USER;
+// --- Gmail-based email configuration (as requested) ---
+const EMAIL_RECIPIENT = process.env.EMAIL_RECIPIENT;   // recipient
+const GMAIL_USER = process.env.GMAIL_USER;             // your Gmail address
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD; // app-specific password
 
-// Behavior (can be repo variables or hard-coded in workflow env section)
+// SMTP details for Gmail
+const SMTP_HOST = 'smtp.gmail.com';
+const SMTP_PORT = Number(process.env.SMTP_PORT || 465); // 465 (SSL) by default
+const MAIL_FROM = process.env.MAIL_FROM || GMAIL_USER;  // optional override
+
+// Behavior knobs
 const POWER_THRESHOLD = Number(process.env.POWER_THRESHOLD || 100);
-const MAX_RUNTIME_SEC = Number(process.env.MAX_RUNTIME_SEC || 600); // 10 min
+const MAX_RUNTIME_SEC = Number(process.env.MAX_RUNTIME_SEC || 600); // 10 minutes
 
 function assertEnv() {
   const missing = [];
-  if (!TIBBER_TOKEN)   missing.push('TIBBER_TOKEN');
-  if (!HOME_ID)        missing.push('TIBBER_HOME_ID');
-  if (!MAIL_TO)        missing.push('MAIL_TO');
-  if (!SMTP_HOST)      missing.push('SMTP_HOST');
-  if (!SMTP_USER)      missing.push('SMTP_USER');
-  if (!SMTP_PASS)      missing.push('SMTP_PASS');
+  if (!TIBBER_TOKEN)           missing.push('TIBBER_TOKEN');
+  if (!HOME_ID)                missing.push('TIBBER_HOME_ID');
+  if (!EMAIL_RECIPIENT)        missing.push('EMAIL_RECIPIENT');
+  if (!GMAIL_USER)             missing.push('GMAIL_USER');
+  if (!GMAIL_APP_PASSWORD)     missing.push('GMAIL_APP_PASSWORD');
   if (missing.length) {
     console.error(`Missing environment variables: ${missing.join(', ')}`);
     process.exit(1);
@@ -47,14 +48,17 @@ async function getWebsocketSubscriptionUrl() {
       }
     `
   };
+
   const res = await fetch(httpEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      // Tibber HTTPS auth requires Bearer token
       Authorization: `Bearer ${TIBBER_TOKEN}`
     },
     body: JSON.stringify(body)
   });
+
   if (!res.ok) {
     throw new Error(`Failed to get websocketSubscriptionUrl: ${res.status} ${res.statusText}`);
   }
@@ -70,8 +74,8 @@ function createMailTransporter() {
   return nodemailer.createTransport({
     host: SMTP_HOST,
     port: SMTP_PORT,
-    secure: SMTP_PORT === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS }
+    secure: SMTP_PORT === 465, // true for 465 (SSL), false for 587 (STARTTLS)
+    auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD }
   });
 }
 
@@ -88,8 +92,14 @@ async function sendAlertEmail({ timestamp, power }) {
       <li><b>Threshold:</b> ${POWER_THRESHOLD} W</li>
     </ul>
   `;
-  await transporter.sendMail({ from: MAIL_FROM, to: MAIL_TO, subject, text, html });
-  console.log(`📧 Sent alert → ${MAIL_TO} (power=${power}W)`);
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: EMAIL_RECIPIENT,
+    subject,
+    text,
+    html
+  });
+  console.log(`📧 Sent alert → ${EMAIL_RECIPIENT} (power=${power}W)`);
 }
 
 async function run() {
@@ -100,7 +110,7 @@ async function run() {
 
   const client = createClient({
     url: wsUrl,
-    // Tibber auth for subscriptions: connection_init payload with { token }
+    // Tibber subscription auth via connection_init payload { token: <your token> }
     connectionParams: { token: TIBBER_TOKEN },
     retryAttempts: 10,
     shouldRetry: () => true
