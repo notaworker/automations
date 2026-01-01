@@ -214,6 +214,14 @@ async function main() {
   console.log("Price:", price, "SEK/kWh");
   console.log("Power:", power, "W");
 
+  // NEW: Send email if price is negative
+  if (price < 0) {
+    await sendEmail(
+      "⚠️ Negative electricity price detected",
+      `The electricity price is negative.\nPrice: ${price} SEK/kWh`
+    );
+  }
+
   const priceNegative = price < 0;
   const powerNegative = power < -50;
 
