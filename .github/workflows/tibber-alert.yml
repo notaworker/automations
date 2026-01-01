@@ -33,6 +33,7 @@ jobs:
 
       - name: Run Tibber subscription alert
         env:
+         USER_AGENT: "automations/1.0 (GitHub Actions) graphql-ws/6.0.6 ws/8.17.0"
           TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
           TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}
           EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
