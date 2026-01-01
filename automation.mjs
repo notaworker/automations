@@ -171,4 +171,68 @@ async function getTibberPower() {
       if (!settled) {
         settled = true;
         client.dispose();
-        reject(new Error("Tibber
+        reject(new Error("Tibber timeout"));
+      }
+    }, TIMEOUT_MS);
+
+    client.subscribe(
+      { query: SUB },
+      {
+        next: (payload) => {
+          if (settled) return;
+          const m = payload?.data?.liveMeasurement;
+          if (m && typeof m.power === "number") {
+            settled = true;
+            clearTimeout(timer);
+            client.dispose();
+            resolve(m.power);
+          }
+        },
+        error: (err) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            client.dispose();
+            reject(err);
+          }
+        },
+      }
+    );
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// MAIN LOGIC
+// ─────────────────────────────────────────────────────────────
+
+async function main() {
+  console.log("Fetching price and power...");
+
+  const price = await getCurrentPrice();
+  const power = await getTibberPower();
+
+  console.log("Price:", price, "SEK/kWh");
+  console.log("Power:", power, "W");
+
+  const priceNegative = price < 0;
+  const powerNegative = power < -50;
+
+  let desiredState = "1"; // default ON
+
+  if (priceNegative && powerNegative) {
+    desiredState = "0"; // OFF
+  }
+
+  console.log("Growatt should be:", desiredState === "0" ? "OFF" : "ON");
+
+  await sendTrigger(desiredState);
+
+  await sendEmail(
+    `Growatt state changed → ${desiredState === "0" ? "OFF" : "ON"}`,
+    `Price: ${price} SEK/kWh\nPower: ${power} W\nAction: ${
+      desiredState === "0" ? "Power OFF" : "Power ON"
+    }`
+  );
+}
+
+main().catch((err) => console.error("Fatal:", err));
