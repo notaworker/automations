@@ -39,8 +39,8 @@ function assertEnv() {
 }
 
 // ── HTTPS endpoint (your requested URL) ────────────────────────────────────────
-// Tibber docs: queries/mutations -> https://api.tibber.com/v1-beta/gql
-// From there, fetch viewer.websocketSubscriptionUrl for subscriptions. [1](https://developer.tibber.com/docs/guides/calling-api)
+// Per Tibber docs: use this HTTPS endpoint for queries/mutations, including
+// fetching the websocketSubscriptionUrl for subscriptions. [1](https://developer.tibber.com/docs/guides/calling-api)
 const HTTP_GRAPHQL_ENDPOINT = 'https://api.tibber.com/v1-beta/gql';
 
 // ── Fetch Tibber websocketSubscriptionUrl (HTTPS) ──────────────────────────────
@@ -125,14 +125,15 @@ Value: ${power}W`;
 async function run() {
   assertEnv();
 
+  // Step 1: HTTPS query to get the proper WSS subscription endpoint
   const wsUrl = await getWebsocketSubscriptionUrl();
   console.log(`Connecting to Tibber WebSocket: ${wsUrl}`);
 
-  // Provide WebSocket implementation for Node via ws
+  // Step 2: Open subscription over WebSocket (required for liveMeasurement)
+  // Tibber requires connection_init payload with { token } for subscriptions. [3](https://www.powershellgallery.com/packages/PSTibber/0.3.0/Content/functions%5CConnect-TibberWebSocket.ps1)
   const client = createClient({
     url: wsUrl,
-    webSocketImpl: WebSocket,           // <-- CRITICAL for Node
-    // Tibber requires connection_init payload with token for subscriptions. [2](https://www.powershellgallery.com/packages/PSTibber/0.3.0/Content/functions%5CConnect-TibberWebSocket.ps1)
+    webSocketImpl: WebSocket, // Node needs an explicit WebSocket implementation
     connectionParams: { token: TIBBER_TOKEN },
     retryAttempts: 10,
     shouldRetry: () => true
