@@ -1,8 +1,8 @@
 // login.mjs
 import fetch from "node-fetch";
 
-const USERNAME = process.env.GROWATT_USER;
-const PASSWORD = process.env.GROWATT_PASS;
+const USERNAME = process.env.GROWATT_USERNAME;
+const PASSWORD = process.env.GROWATT_PASSWORD;
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
 if (!USERNAME || !PASSWORD || !SCRAPER_API_KEY) {
