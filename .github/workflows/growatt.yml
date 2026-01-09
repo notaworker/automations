@@ -17,11 +17,11 @@ jobs:
           node-version: 18
 
       - name: Install dependencies
-        run: npm install node-fetch@2 https-proxy-agent
+        run: npm install node-fetch@2
 
       - name: Run login script
         env:
           GROWATT_USER: ${{ secrets.GROWATT_USERNAME }}
           GROWATT_PASS: ${{ secrets.GROWATT_PASSWORD }}
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
         run: node login.mjs
