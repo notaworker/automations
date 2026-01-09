@@ -19,6 +19,8 @@ on:
 jobs:
   advanced-set:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     # Ensure date generation matches Stockholm (CET/CEST)
     env:
