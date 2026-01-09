@@ -1,20 +1,21 @@
 // login.mjs
 import fetch from "node-fetch";
-import HttpsProxyAgent from "https-proxy-agent";
 
 const USERNAME = process.env.GROWATT_USER;
 const PASSWORD = process.env.GROWATT_PASS;
-const PROXY_URL = process.env.PROXY_URL;
+const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
-if (!USERNAME || !PASSWORD) {
-  console.error("Missing GROWATT_USER or GROWATT_PASS env vars");
+if (!USERNAME || !PASSWORD || !SCRAPER_API_KEY) {
+  console.error("Missing environment variables");
   process.exit(1);
 }
 
-const agent = PROXY_URL ? new HttpsProxyAgent(PROXY_URL) : null;
-
 async function login() {
-  const url = "https://server.growatt.com/newLoginAPI.do";
+  const targetUrl = "https://server.growatt.com/newLoginAPI.do";
+
+  const scraperUrl =
+    `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=` +
+    encodeURIComponent(targetUrl);
 
   const body = new URLSearchParams({
     userName: USERNAME,
@@ -23,13 +24,12 @@ async function login() {
     isRememberMe: "0",
   });
 
-  const res = await fetch(url, {
+  const res = await fetch(scraperUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body,
-    agent,
   });
 
   const raw = await res.text();
@@ -50,8 +50,7 @@ async function login() {
     process.exit(1);
   }
 
-  const cookies = res.headers.raw()["set-cookie"];
-  console.log("Cookies:", cookies);
+  console.log("Login OK");
 }
 
 login().catch(console.error);
