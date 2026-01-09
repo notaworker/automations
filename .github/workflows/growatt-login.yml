@@ -3,7 +3,7 @@ name: Growatt Login
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'  # Every 6 hours
+    - cron: '0 */6 * * *' # Every 6 hours
 
 jobs:
   login:
@@ -23,4 +23,4 @@ jobs:
         env:
           GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
           GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
-        run: npm start
+        run: npm run growatt-login
