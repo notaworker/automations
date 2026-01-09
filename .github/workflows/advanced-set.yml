@@ -1,0 +1,84 @@
+
+name: ShineServer Advanced Set (Export Limit)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Enable or disable export limit"
+        required: true
+        type: choice
+        options:
+          - enable
+          - disable
+      register:
+        description: "Register number (default: 202)"
+        required: false
+        default: "202"
+
+jobs:
+  advanced-set:
+    runs-on: ubuntu-latest
+    env:
+      # Ensure all date operations use Stockholm local time
+      TZ: Europe/Stockholm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npm run install:browsers
+
+      - name: Compute desired value (1=enable, 0=disable)
+        id: setval
+        run: |
+          if [ "${{ github.event.inputs.action }}" = "enable" ]; then
+            echo "value=1" >> $GITHUB_OUTPUT
+          else
+            echo "value=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Compute installer password (growattYYYYMMDD in Stockholm time)
+        id: pw
+        run: |
+          # Uses the TZ environment from the job to get local date
+          today=$(date +%Y%m%d)
+          echo "pass=growatt${today}" >> $GITHUB_OUTPUT
+          echo "Computed installer password for today: growatt${today}"  # log without exposing secrets elsewhere
+
+      - name: Run Advanced Set
+        env:
+          # Required credentials (keep these as encrypted repository secrets)
+          GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
+          GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
+
+          # Computed daily installer password
+          GROWATT_INSTALLER_PASSWORD: ${{ steps.pw.outputs.pass }}
+
+          # Device selection
+          DEVICE_SN: ${{ secrets.DEVICE_SN }}
+
+          # Register/value
+          EXPORT_REGISTER: ${{ github.event.inputs.register }}
+          EXPORT_VALUE: ${{ steps.setval.outputs.value }}
+
+          # Options
+          HEADLESS: "true"
+          BASE_URL: "https://server.growatt.com"
+        run: npm run advanced-set
+
+      - name: Upload screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: advanced-set-error
+          path: advanced-set-error.png
