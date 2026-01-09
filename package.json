@@ -10,8 +10,6 @@
   "scripts": {
     "start": "node grow.mjs",
     "tibber-alert": "node tibber-power-alert.mjs",
-
-    // Playwright setup & run (for ShineServer Advanced Set)
     "install:browsers": "playwright install --with-deps",
     "advanced-set": "node scripts/advanced-set.js"
   },
@@ -20,8 +18,6 @@
     "nodemailer": "^6.9.8",
     "graphql-ws": "^6.0.6",
     "ws": "^8.17.0",
-
-    // Added for Advanced Set browser automation
     "dotenv": "^16.4.5",
     "playwright": "^1.42.0"
   }
