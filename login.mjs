@@ -6,13 +6,14 @@ const PASSWORD = process.env.GROWATT_PASSWORD;
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
 
 if (!USERNAME || !PASSWORD || !SCRAPER_API_KEY) {
-  console.error("Missing environment variables");
+  console.error("Missing environment variables (GROWATT_USERNAME, GROWATT_PASSWORD, SCRAPER_API_KEY)");
   process.exit(1);
 }
 
 async function login() {
   const targetUrl = "https://server.growatt.com/newLoginAPI.do";
 
+  // Route through ScraperAPI to bypass Growatt blocking GitHub IPs
   const scraperUrl =
     `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=` +
     encodeURIComponent(targetUrl);
