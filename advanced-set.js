@@ -1,4 +1,5 @@
-
+permissions:
+  contents: read
 // advanced-set.js
 import 'dotenv/config';
 import fs from 'fs';
