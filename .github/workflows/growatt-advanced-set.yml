@@ -1,0 +1,85 @@
+
+name: Growatt – ShineServer Advanced Set (Export Limit)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Export limit action"
+        required: true
+        type: choice
+        options:
+          - enable
+          - disable
+      register:
+        description: "Export limit register"
+        required: false
+        default: "202"
+
+jobs:
+  advanced-set:
+    runs-on: ubuntu-latest
+
+    # Ensure date generation matches Stockholm (CET/CEST)
+    env:
+      TZ: Europe/Stockholm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npm run install:browsers
+
+      - name: Resolve export limit value
+        id: export_value
+        run: |
+          if [ "${{ github.event.inputs.action }}" = "enable" ]; then
+            echo "value=1" >> $GITHUB_OUTPUT
+          else
+            echo "value=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Compute Growatt installer password (growattYYYYMMDD)
+        id: installer_pw
+        run: |
+          today=$(date +%Y%m%d)
+          echo "password=growatt${today}" >> $GITHUB_OUTPUT
+          echo "Using installer password: growatt${today}"
+
+      - name: Run ShineServer Advanced Set
+        env:
+          # Growatt account credentials
+          GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
+          GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
+
+          # Dynamically computed installer password
+          GROWATT_INSTALLER_PASSWORD: ${{ steps.installer_pw.outputs.password }}
+
+          # Device identification
+          DEVICE_SN: ${{ secrets.DEVICE_SN }}
+
+          # Register write
+          EXPORT_REGISTER: ${{ github.event.inputs.register }}
+          EXPORT_VALUE: ${{ steps.export_value.outputs.value }}
+
+          # Playwright settings
+          HEADLESS: "true"
+          BASE_URL: "https://server.growatt.com"
+        run: npm run advanced-set
+
+      - name: Upload screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: growatt-advanced-set-error
+          path: advanced-set-error.png
+``
