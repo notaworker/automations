@@ -21,7 +21,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Make date() use Stockholm local time when computing installer password
       TZ: Europe/Stockholm
 
     steps:
@@ -32,14 +31,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          # ⚠️ No npm cache here because you don’t keep a lock file
 
-      - name: Debug workspace
+      - name: Verify root files
         run: |
           echo "Current directory:"
           pwd
-          echo "Listing files:"
+          echo "Files in repo root:"
           ls -la
+          echo "package.json contents:"
+          cat package.json
 
       - name: Install dependencies (no lock file)
         run: npm install
@@ -67,21 +67,12 @@ jobs:
 
       - name: Run ShineServer Advanced Set
         env:
-          # Growatt account credentials (set these in repo Settings → Secrets and variables → Actions)
           GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
           GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
-
-          # Dynamically computed installer password (growattYYYYMMDD)
           GROWATT_INSTALLER_PASSWORD: ${{ steps.installer_pw.outputs.password }}
-
-          # Device identification
           DEVICE_SN: ${{ secrets.DEVICE_SN }}
-
-          # Register write
           EXPORT_REGISTER: ${{ github.event.inputs.register }}
           EXPORT_VALUE: ${{ steps.export_value.outputs.value }}
-
-          # Playwright settings
           HEADLESS: "true"
           BASE_URL: "https://server.growatt.com"
         run: npm run advanced-set
