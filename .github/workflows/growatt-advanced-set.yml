@@ -32,9 +32,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          # ⚠️ No npm cache here because you don’t keep a lock file
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Debug workspace
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Listing files:"
+          ls -la
+
+      - name: Install dependencies (no lock file)
+        run: npm install
 
       - name: Install Playwright browsers
         run: npm run install:browsers
