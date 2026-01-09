@@ -1,6 +1,9 @@
 
 name: Growatt – ShineServer Advanced Set (Export Limit)
 
+env:
+  LOGIN_MODE: oss
+
 on:
   workflow_dispatch:
     inputs:
