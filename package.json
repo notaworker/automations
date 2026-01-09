@@ -2,19 +2,28 @@
 {
   "name": "automations",
   "version": "1.0.0",
-  "description": "A Node.js project using ES modules and node-fetch v3",
+  "description": "Node.js automations (ES modules) + Growatt ShineServer Advanced Set via Playwright",
   "type": "module",
   "main": "grow.mjs",
+  "author": "",
+  "license": "ISC",
   "scripts": {
     "start": "node grow.mjs",
-    "tibber-alert": "node tibber-power-alert.mjs"
+    "tibber-alert": "node tibber-power-alert.mjs",
+
+    // Playwright setup & run (for ShineServer Advanced Set)
+    "install:browsers": "playwright install --with-deps",
+    "advanced-set": "node scripts/advanced-set.js"
   },
   "dependencies": {
     "node-fetch": "^3.0.0",
     "nodemailer": "^6.9.8",
     "graphql-ws": "^6.0.6",
-    "ws": "^8.17.0"
-  },
-  "author": "",
-  "license": "ISC"
+    "ws": "^8.17.0",
+
+    // Added for Advanced Set browser automation
+    "dotenv": "^16.4.5",
+    "playwright": "^1.42.0"
+  }
 }
+``
