@@ -1,0 +1,26 @@
+name: Growatt Login Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  login:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install node-fetch@2
+
+      - name: Run login script
+        env:
+          GROWATT_USER: ${{ secrets.GROWATT_USER }}
+          GROWATT_PASS: ${{ secrets.GROWATT_PASS }}
+        run: node login.mjs
