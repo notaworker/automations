@@ -1,5 +1,5 @@
-
 import 'dotenv/config';
+import fs from 'fs';
 import { chromium } from 'playwright';
 import { SELECTORS } from './selectors.js';
 
@@ -15,12 +15,54 @@ const {
 } = process.env;
 
 async function run() {
-  const browser = await chromium.launch({ headless: HEADLESS === 'true' });
-  const page = await browser.newPage();
+  // increase default timeout for slow CI environments
+  const defaultTimeout = 60000;
+
+  const browser = await chromium.launch({
+    headless: HEADLESS === 'true',
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  page.setDefaultTimeout(defaultTimeout);
+
+  // capture page console messages to workflow logs
+  page.on('console', msg => {
+    try {
+      console.log(`PAGE LOG [${msg.type()}]: ${msg.text()}`);
+    } catch {}
+  });
+
+  // auto-accept dialogs (if installer password prompt appears as a dialog)
+  page.on('dialog', async dialog => {
+    console.log('PAGE DIALOG:', dialog.type(), dialog.message());
+    try { await dialog.accept(); } catch {}
+  });
 
   try {
     // 1) Login
-    await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded' });
+    console.log('Navigating to login page:', `${BASE_URL}/login`);
+    const response = await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle' });
+    console.log('Navigation finished. URL:', page.url(), 'Status:', response ? response.status() : 'no-response');
+
+    // wait for the username input, but capture debug artifacts if it doesn't appear
+    try {
+      const usernameSelector = SELECTORS.login.username;
+      console.log('Waiting for login selector:', usernameSelector);
+      await page.waitForSelector(usernameSelector, { timeout: 15000 });
+    } catch (waitErr) {
+      console.error('Login selector not found within timeout. Saving debug artifacts...');
+      try {
+        await page.screenshot({ path: 'login-not-found.png', fullPage: true });
+        const html = await page.content();
+        fs.writeFileSync('login-page.html', html);
+        console.log('Saved login-not-found.png and login-page.html to workspace.');
+      } catch (saveErr) {
+        console.error('Failed to save debug artifacts:', saveErr);
+      }
+      throw waitErr;
+    }
+
+    // fill login form
     await page.fill(SELECTORS.login.username, GROWATT_USERNAME);
     await page.fill(SELECTORS.login.password, GROWATT_PASSWORD);
     await Promise.all([
@@ -69,7 +111,12 @@ async function run() {
     console.error('Advanced Set failed:', err);
     try {
       await page.screenshot({ path: 'advanced-set-error.png', fullPage: true });
-    } catch {}
+      const html = await page.content();
+      fs.writeFileSync('advanced-set-error.html', html);
+      console.log('Saved advanced-set-error.png and advanced-set-error.html');
+    } catch (saveErr) {
+      console.error('Failed to save error artifacts:', saveErr);
+    }
     process.exitCode = 1;
   } finally {
     await browser.close();
