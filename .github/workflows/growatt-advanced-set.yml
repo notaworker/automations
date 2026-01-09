@@ -12,7 +12,7 @@ on:
           - enable
           - disable
       register:
-        description: "Export limit register"
+        description: "Export limit register (default: 202)"
         required: false
         default: "202"
 
@@ -20,8 +20,8 @@ jobs:
   advanced-set:
     runs-on: ubuntu-latest
 
-    # Ensure date generation matches Stockholm (CET/CEST)
     env:
+      # Make date() use Stockholm local time when computing installer password
       TZ: Europe/Stockholm
 
     steps:
@@ -39,29 +39,31 @@ jobs:
       - name: Install Playwright browsers
         run: npm run install:browsers
 
-      - name: Resolve export limit value
+      - name: Resolve export limit value (1=enable, 0=disable)
         id: export_value
+        shell: bash
         run: |
-          if [ "${{ github.event.inputs.action }}" = "enable" ]; then
-            echo "value=1" >> $GITHUB_OUTPUT
+          if [[ "${{ github.event.inputs.action }}" == "enable" ]]; then
+            echo "value=1" >> "$GITHUB_OUTPUT"
           else
-            echo "value=0" >> $GITHUB_OUTPUT
+            echo "value=0" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Compute Growatt installer password (growattYYYYMMDD)
         id: installer_pw
+        shell: bash
         run: |
-          today=$(date +%Y%m%d)
-          echo "password=growatt${today}" >> $GITHUB_OUTPUT
+          today="$(date +%Y%m%d)"
+          echo "password=growatt${today}" >> "$GITHUB_OUTPUT"
           echo "Using installer password: growatt${today}"
 
       - name: Run ShineServer Advanced Set
         env:
-          # Growatt account credentials
+          # Growatt account credentials (set these in repo Settings → Secrets and variables → Actions)
           GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
           GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
 
-          # Dynamically computed installer password
+          # Dynamically computed installer password (growattYYYYMMDD)
           GROWATT_INSTALLER_PASSWORD: ${{ steps.installer_pw.outputs.password }}
 
           # Device identification
@@ -82,4 +84,3 @@ jobs:
         with:
           name: growatt-advanced-set-error
           path: advanced-set-error.png
-``
