@@ -15,14 +15,16 @@ const {
 } = process.env;
 
 async function run() {
-  // increase default timeout for slow CI environments
   const defaultTimeout = 60000;
-
   const browser = await chromium.launch({
     headless: HEADLESS === 'true',
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36'
+  });
+  const page = await context.newPage();
   page.setDefaultTimeout(defaultTimeout);
 
   // capture page console messages to workflow logs
@@ -32,25 +34,77 @@ async function run() {
     } catch {}
   });
 
-  // auto-accept dialogs (if installer password prompt appears as a dialog)
+  // auto-accept dialogs (if any)
   page.on('dialog', async dialog => {
     console.log('PAGE DIALOG:', dialog.type(), dialog.message());
     try { await dialog.accept(); } catch {}
   });
 
+  // helper: search main page and frames for a list of selectors (with retries)
+  async function findInContexts(selectors, timeout = 15000, pollInterval = 500) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      // check main page
+      for (const sel of selectors) {
+        try {
+          const el = await page.$(sel);
+          if (el) return { context: page, selector: sel };
+        } catch {}
+      }
+      // check frames
+      for (const frame of page.frames()) {
+        for (const sel of selectors) {
+          try {
+            const el = await frame.$(sel);
+            if (el) return { context: frame, selector: sel };
+          } catch {}
+        }
+      }
+      await new Promise(r => setTimeout(r, pollInterval));
+    }
+    return null;
+  }
+
+  // common candidate selectors for login
+  const usernameCandidates = [
+    'input[name="userName"]',
+    'input[name="username"]',
+    'input[name="user"]',
+    'input#userName',
+    'input[type="email"]',
+    'input[placeholder*="用户名"]',
+    'input[placeholder*="账号"]',
+    'input[placeholder*="Account"]',
+    'input[placeholder*="Username"]',
+    'input[autocomplete="username"]'
+  ];
+
+  const passwordCandidates = [
+    'input[name="password"]',
+    'input[type="password"]',
+    'input[placeholder*="密码"]',
+    'input[autocomplete="current-password"]'
+  ];
+
+  const submitCandidates = [
+    'button[type="submit"]',
+    'input[type="submit"]',
+    'button:has-text("登录")',
+    'button:has-text("Login")',
+    'button:has-text("Sign in")'
+  ];
+
   try {
-    // 1) Login
+    // 1) Navigate to login page
     console.log('Navigating to login page:', `${BASE_URL}/login`);
     const response = await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle' });
     console.log('Navigation finished. URL:', page.url(), 'Status:', response ? response.status() : 'no-response');
 
-    // wait for the username input, but capture debug artifacts if it doesn't appear
-    try {
-      const usernameSelector = SELECTORS.login.username;
-      console.log('Waiting for login selector:', usernameSelector);
-      await page.waitForSelector(usernameSelector, { timeout: 15000 });
-    } catch (waitErr) {
-      console.error('Login selector not found within timeout. Saving debug artifacts...');
+    // Try to locate username (searches main page and frames)
+    console.log('Searching for username field...');
+    const usernameTarget = await findInContexts(usernameCandidates, 20000);
+    if (!usernameTarget) {
+      console.error('Login selector not found. Saving debug artifacts...');
       try {
         await page.screenshot({ path: 'login-not-found.png', fullPage: true });
         const html = await page.content();
@@ -59,17 +113,46 @@ async function run() {
       } catch (saveErr) {
         console.error('Failed to save debug artifacts:', saveErr);
       }
-      throw waitErr;
+      throw new Error('Username field not found');
+    }
+    console.log('Found username selector:', usernameTarget.selector, 'in', usernameTarget.context === page ? 'page' : 'frame');
+
+    // Find password and submit button
+    console.log('Searching for password field...');
+    const passwordTarget = await findInContexts(passwordCandidates, 20000);
+    if (!passwordTarget) throw new Error('Password field not found');
+
+    console.log('Searching for submit button...');
+    const submitTarget = await findInContexts(submitCandidates, 10000);
+
+    // Fill credentials
+    const fillContext = async (ctx, selector, value) => {
+      // Both Page and Frame support fill()
+      await ctx.fill(selector, value);
+    };
+
+    await fillContext(usernameTarget.context, usernameTarget.selector, GROWATT_USERNAME);
+    await fillContext(passwordTarget.context, passwordTarget.selector, GROWATT_PASSWORD);
+
+    // Submit: prefer clicking a button, fall back to pressing Enter in password field
+    if (submitTarget) {
+      console.log('Clicking submit:', submitTarget.selector, 'in', submitTarget.context === page ? 'page' : 'frame');
+      // Trigger click and wait for navigation (if any)
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle', timeout: 20000 }).catch(() => {}),
+        submitTarget.context.click(submitTarget.selector).catch(() => {})
+      ]);
+    } else {
+      console.log('No submit button found, pressing Enter on password field as fallback');
+      try {
+        await (passwordTarget.context).press(passwordTarget.selector, 'Enter');
+        await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 20000 }).catch(() => {});
+      } catch {}
     }
 
-    // fill login form
-    await page.fill(SELECTORS.login.username, GROWATT_USERNAME);
-    await page.fill(SELECTORS.login.password, GROWATT_PASSWORD);
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle' }),
-      page.click(SELECTORS.login.submit),
-    ]);
-    await page.waitForSelector(SELECTORS.navGuard, { timeout: 15000 });
+    // Wait for a post-login indicator used elsewhere in the script
+    await page.waitForSelector(SELECTORS.navGuard, { timeout: 20000 });
+    console.log('Login appears successful; nav guard found.');
 
     // 2) Go to devices
     await page.click(SELECTORS.deviceTab).catch(() => {});
