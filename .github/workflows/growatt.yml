@@ -21,6 +21,6 @@ jobs:
 
       - name: Run login script
         env:
-          GROWATT_USER: ${{ secrets.GROWATT_USER }}
-          GROWATT_PASS: ${{ secrets.GROWATT_PASS }}
+          GROWATT_USER: ${{ secrets.GROWATT_USERNAME }}
+          GROWATT_PASS: ${{ secrets.GROWATT_PASSWORD }}
         run: node login.mjs
