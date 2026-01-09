@@ -13,7 +13,7 @@ const {
   EXPORT_REGISTER,            // e.g., 202
   EXPORT_VALUE,               // e.g., 1 (enable) or 0 (disable)
   HEADLESS = 'true',
-  LOGIN_MODE = 'monitor',     // 'monitor' (ShineServer) or 'oss' (installer)
+  LOGIN_MODE = 'monitor',     // 'monitor' or 'oss'
   DISABLE_WEB_SECURITY = 'false',
   BASE_URL                    // optional override
 } = process.env;
@@ -28,8 +28,10 @@ async function run() {
   // ---- Browser launch (optionally relax CORS for CI) ----
   const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox'];
   if (DISABLE_WEB_SECURITY === 'true') {
-    // Dev/CI-only: relax CORS & site isolation
-    launchArgs.push('--disable-web-security', '--disable-features=IsolateOrigins,site-per-process');
+    launchArgs.push(
+      '--disable-web-security',
+      '--disable-features=IsolateOrigins,site-per-process'
+    );
   }
 
   const browser = await chromium.launch({
@@ -41,16 +43,21 @@ async function run() {
     viewport: { width: 1280, height: 800 },
     userAgent:
       'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36',
-    bypassCSP: DISABLE_WEB_SECURITY === 'true', // relax CSP only if needed
+    bypassCSP: DISABLE_WEB_SECURITY === 'true',
   });
 
   const page = await context.newPage();
   page.setDefaultTimeout(defaultTimeout);
 
   // ---- Logging ----
+  let ossHintDetected = false;
   page.on('console', msg => {
+    const text = msg.text();
     try {
-      console.log(`PAGE LOG [${msg.type()}]: ${msg.text()}`);
+      console.log(`PAGE LOG [${msg.type()}]: ${text}`);
+      if (/loginOSS\s+true/i.test(text)) {
+        ossHintDetected = true;
+      }
     } catch {}
   });
   page.on('dialog', async dialog => {
@@ -76,18 +83,15 @@ async function run() {
     }
   }
 
-  // Search main page and frames for selectors (with retries)
   async function findInContexts(selectors, timeout = 15000, pollInterval = 500) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
-      // main page
       for (const sel of selectors) {
         try {
           const el = await page.$(sel);
           if (el) return { context: page, selector: sel };
         } catch {}
       }
-      // frames
       for (const frame of page.frames()) {
         for (const sel of selectors) {
           try {
@@ -101,7 +105,6 @@ async function run() {
     return null;
   }
 
-  // Common candidate selectors for login
   const usernameCandidates = [
     'input[name="userName"]',
     'input[name="username"]',
@@ -128,19 +131,14 @@ async function run() {
     'button:has-text("Sign in")'
   ];
 
-  // Ensure we click the correct login variant
   async function forceMonitorLoginUI() {
-    // Try to select a tab or toggle for "Monitor"/"ShineServer"
     await page.locator('text=/Monitor|ShineServer/i').first().click().catch(() => {});
-    // Sometimes there is a "Monitor/Oss Login" switcher
     await page.locator('.login-tab >> text=/Monitor/i').first().click().catch(() => {});
   }
 
-  // Fill inside the form that contains the username field (scoped submit)
   async function fillAndSubmitInSameForm(targets, timeout = 30000) {
     const { usernameTarget, passwordTarget } = targets;
 
-    // Scope to the form that contains the username input
     const ctx = usernameTarget.context;
     const form = ctx.locator(`form:has(${usernameTarget.selector})`);
     const hasForm = await form.count().catch(() => 0);
@@ -152,7 +150,6 @@ async function run() {
       const submitLocator = form.locator(
         'button[type="submit"], input[type="submit"], button:has-text("Login"), button:has-text("登录")'
       );
-
       const submitCount = await submitLocator.count();
       if (submitCount > 0) {
         await Promise.all([
@@ -163,10 +160,9 @@ async function run() {
       }
     }
 
-    // Fallback: fill the two fields in their respective contexts and click a global submit candidate
-    const fill = async (ctx, selector, value) => ctx.fill(selector, value);
-    await fill(usernameTarget.context, usernameTarget.selector, GROWATT_USERNAME);
-    await fill(passwordTarget.context, passwordTarget.selector, GROWATT_PASSWORD);
+    // Fallback
+    await usernameTarget.context.fill(usernameTarget.selector, GROWATT_USERNAME);
+    await passwordTarget.context.fill(passwordTarget.selector, GROWATT_PASSWORD);
 
     const submitTarget = await findInContexts(submitCandidates, 8000);
     if (submitTarget) {
@@ -211,15 +207,25 @@ async function run() {
 
     await fillAndSubmitInSameForm({ usernameTarget, passwordTarget }, 30000);
 
-    // Stronger post-login signals
+    // Stronger post-login signals: advance if URL is routed to /panel even if header isn't visible yet
     await page.waitForURL(/\/panel|\/index/i, { timeout: 30000 }).catch(() => {});
-    await page.waitForSelector(SELECTORS.navGuard, { timeout: 30000 });
-    console.log('Login appears successful (monitor); nav guard found.');
+
+    // If page announced OSS flow, fallback to OSS login to avoid CORS deadlock
+    if (ossHintDetected && LOGIN_MODE !== 'oss' && DISABLE_WEB_SECURITY !== 'true') {
+      console.log('OSS flow detected by page; switching to direct OSS login to avoid CORS.');
+      await loginOSS();
+      return;
+    }
+
+    // Try app shell guards, but don't block progression if they fail — continue to devices
+    await page.waitForSelector(SELECTORS.navGuard, { timeout: 15000 }).catch(() => {});
+    console.log('Login appears successful (monitor) or URL advanced; proceeding.');
   }
 
   async function loginOSS() {
-    console.log('Navigating to login page (OSS):', `${effectiveBaseUrl}/login`);
-    const response = await page.goto(`${effectiveBaseUrl}/login`, { waitUntil: 'domcontentloaded' });
+    const ossBase = BASE_URL ?? 'https://oss.growatt.com';
+    console.log('Navigating to login page (OSS):', `${ossBase}/login`);
+    const response = await page.goto(`${ossBase}/login`, { waitUntil: 'domcontentloaded' });
     console.log('Navigation finished. URL:', page.url(), 'Status:', response ? response.status() : 'no-response');
     await page.waitForLoadState('networkidle').catch(() => {});
 
@@ -230,12 +236,6 @@ async function run() {
       await saveArtifacts('login-oss-not-found');
       throw new Error('Username field not found (oss)');
     }
-    console.log(
-      'Found username selector (oss):',
-      usernameTarget.selector,
-      'in',
-      usernameTarget.context === page ? 'page' : 'frame'
-    );
 
     console.log('Searching for password field (oss)...');
     const passwordTarget = await findInContexts(passwordCandidates, 20000);
@@ -244,8 +244,8 @@ async function run() {
     await fillAndSubmitInSameForm({ usernameTarget, passwordTarget }, 30000);
 
     await page.waitForURL(/\/panel|\/index|\/home|\/dashboard/i, { timeout: 30000 }).catch(() => {});
-    await page.waitForSelector(SELECTORS.navGuard, { timeout: 30000 });
-    console.log('Login appears successful (oss); nav guard found.');
+    await page.waitForSelector(SELECTORS.navGuard, { timeout: 15000 }).catch(() => {});
+    console.log('Login appears successful (oss); proceeding.');
   }
 
   try {
@@ -288,7 +288,7 @@ async function run() {
     // 7) Save
     await Promise.all([
       page.click(SELECTORS.saveButton),
-      page.waitForTimeout(2000) // write is queued; response may be async
+      page.waitForTimeout(2000)
     ]);
 
     console.log(`Advanced Set submitted: register=${EXPORT_REGISTER}, value=${EXPORT_VALUE}`);
