@@ -1,4 +1,4 @@
-name: Growatt Login Test
+name: Growatt Login
 
 on:
   workflow_dispatch:
@@ -17,10 +17,11 @@ jobs:
           node-version: 18
 
       - name: Install dependencies
-        run: npm install node-fetch@2
+        run: npm install node-fetch@2 https-proxy-agent
 
       - name: Run login script
         env:
           GROWATT_USER: ${{ secrets.GROWATT_USERNAME }}
           GROWATT_PASS: ${{ secrets.GROWATT_PASSWORD }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: node login.mjs
