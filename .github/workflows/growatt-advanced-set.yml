@@ -1,6 +1,9 @@
 
 name: Growatt – ShineServer Advanced Set (Export Limit)
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
