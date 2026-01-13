@@ -1,30 +1,18 @@
-
 {
   "name": "automations",
   "version": "1.0.0",
-  "description": "Automations using ES modules: Tibber + Growatt ShineServer",
+  "description": "A Node.js project using ES modules and node-fetch v3",
   "type": "module",
   "main": "grow.mjs",
   "scripts": {
     "start": "node grow.mjs",
-    "tibber-alert": "node tibber-power-alert.mjs",
-    "enable-export-limit": "EXPORT_LIMIT_ENABLE=1 node set-export-limit.mjs",
-    "disable-export-limit": "EXPORT_LIMIT_ENABLE=0 node set-export-limit.mjs",
-    "test:login": "GW_SERVER_BASE=https://shineserver.growatt.com GW_USER=$GROWATT_USERNAME GW_PASS=$GROWATT_PASSWORD node growatt-login-test.mjs",
-    "set-export-limit": "GW_DEVICE_SN=$GROWATT_DEVICE_SN GW_USER=$GROWATT_USERNAME GW_PASS=$GROWATT_PASSWORD node set-export-limit.mjs"
+    "tibber-alert": "node tibber-power-alert.mjs"
   },
   "dependencies": {
-    "axios": "^1.7.2",
-    "axios-cookiejar-support": "^5.0.1",
-    "graphql-ws": "^6.0.6",
-    "growatt": "^0.7.7",
     "node-fetch": "^3.0.0",
     "nodemailer": "^6.9.8",
-    "tough-cookie": "^4.1.3",
+    "graphql-ws": "^6.0.6",
     "ws": "^8.17.0"
-  },
-  "engines": {
-    "node": ">=18"
   },
   "author": "",
   "license": "ISC"
