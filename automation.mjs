@@ -1,8 +1,10 @@
-import fetch, { Headers } from "node-fetch";
+import fetch from "node-fetch";
 import nodemailer from "nodemailer";
 import { createClient } from "graphql-ws";
 import WebSocket from "ws";
 import fs from "fs";
+import { execFile } from "child_process";
+import path from "path";
 
 // ─────────────────────────────────────────────────────────────
 // ENVIRONMENT VARIABLES
@@ -11,11 +13,6 @@ import fs from "fs";
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_PASS = process.env.GMAIL_APP_PASSWORD;
 const EMAIL_RECIPIENT = process.env.EMAIL_RECIPIENT;
-
-const GROWATT_USERNAME = process.env.GROWATT_USERNAME;
-const GROWATT_PASSWORD = process.env.GROWATT_PASSWORD;
-const GROWATT_DEVICE_SN = process.env.GROWATT_DEVICE_SN;
-const INVERTER_PASSWORD = process.env.INVERTER_PASSWORD || "";
 
 const TIBBER_TOKEN = process.env.TIBBER_TOKEN;
 const TIBBER_HOME_ID = process.env.TIBBER_HOME_ID;
@@ -53,64 +50,29 @@ async function sendEmail(subject, text) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GROWATT LOGIN + EXPORT LIMIT SETTER
+// CALL WORKING GROWATT SCRIPT
 // ─────────────────────────────────────────────────────────────
 
-async function growattLogin() {
-  const payload = new URLSearchParams({
-    account: GROWATT_USERNAME,
-    password: GROWATT_PASSWORD,
-    validateCode: "",
+function callGrowattLimit(percent) {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.resolve("./updateExportLimit.mjs");
+
+    const env = {
+      ...process.env,
+      EXPORT_LIMIT_VALUE: String(percent),
+    };
+
+    execFile("node", [scriptPath], { env }, (error, stdout, stderr) => {
+      console.log(stdout);
+      if (stderr) console.error(stderr);
+      if (error) reject(error);
+      else resolve();
+    });
   });
-
-  const res = await fetch("https://server.growatt.com/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: payload.toString(),
-    redirect: "manual",
-  });
-
-  if (!res.ok) throw new Error("Growatt login failed");
-
-  // Collect ALL cookies
-  const rawCookies = res.headers.raw()["set-cookie"] || [];
-  const cookieString = rawCookies
-    .map((c) => c.split(";")[0])
-    .join("; ");
-
-  return cookieString;
-}
-
-async function setExportLimitPercent(percent) {
-  console.log(`Setting Growatt export limit to ${percent}%...`);
-
-  const cookie = await growattLogin();
-
-  const payload = new URLSearchParams({
-    action: "tlxSet",
-    serialNum: GROWATT_DEVICE_SN,
-    type: "backflow_setting",
-    param1: "1", // enable export limit
-    param2: String(percent), // percentage
-    param3: "0",
-    pwd: INVERTER_PASSWORD,
-  });
-
-  const res = await fetch("https://server.growatt.com/tcpSet.do", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Cookie: cookie,
-    },
-    body: payload.toString(),
-  });
-
-  const text = await res.text();
-  console.log("Growatt response:", text);
 }
 
 // ─────────────────────────────────────────────────────────────
-// PRICE FETCH (Elprisetjustnu)
+// PRICE FETCH
 // ─────────────────────────────────────────────────────────────
 
 async function getCurrentPrice() {
@@ -140,7 +102,7 @@ async function getCurrentPrice() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// TIBBER POWER FETCH (one-shot)
+// TIBBER POWER FETCH
 // ─────────────────────────────────────────────────────────────
 
 async function getTibberPower() {
@@ -231,7 +193,7 @@ function getLastState() {
   try {
     return fs.readFileSync(".growatt_state", "utf8").trim();
   } catch {
-    return "LIMIT_100"; // default
+    return "LIMIT_100";
   }
 }
 
@@ -262,9 +224,6 @@ async function main() {
   const priceNegative = price < 0;
   const powerNegative = power < -50;
 
-  // Option A behavior:
-  // OFF → 0%
-  // ON → 100%
   let desired = "LIMIT_100";
   if (priceNegative && powerNegative) {
     desired = "LIMIT_0";
@@ -280,9 +239,9 @@ async function main() {
   }
 
   if (desired === "LIMIT_0") {
-    await setExportLimitPercent(0);
+    await callGrowattLimit(0);
   } else {
-    await setExportLimitPercent(100);
+    await callGrowattLimit(100);
   }
 
   saveState(desired);
