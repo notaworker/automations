@@ -1,5 +1,8 @@
 name: Update Growatt Export Limit
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
