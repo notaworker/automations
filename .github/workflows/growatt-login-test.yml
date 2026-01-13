@@ -49,4 +49,3 @@ jobs:
           # Optional: set if your account uses another host (e.g., server-us.growatt.com or server.smten.com)
           # GW_SERVER_BASE: https://server.growatt.com
         run: node growatt-login-test.mjs
-``
