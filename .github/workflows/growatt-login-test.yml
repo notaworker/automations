@@ -55,10 +55,10 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: 📦 Install runtime dependencies (no package.json changes)
+      - name: 📦 Install runtime dependencies
         run: |
-          # Install required runtime deps regardless of package.json
-          npm install --no-save axios axios-cookiejar-support tough-cookie cheerio
+          # Install only what the script imports (no package.json needed)
+          npm install --no-save axios axios-cookiejar-support tough-cookie
 
       # Make a filesystem-safe key from the server base for log/artifact names
       - name: 🧹 Sanitize server base for filenames
@@ -73,8 +73,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${GW_USER}" ] || [ -z "${GW_PASS}" ]; then
-            echo "❌ GW_USER or GW_PASS is empty. Ensure repo/org secrets GROWATT_USERNAME and GROWATT_PASSWORD are set and available to this run."
+          if [ -z "${GW_USER}" ] || [ -z "${GW_PASS}" ] || [ -z "${GW_DEVICE_SN}" ]; then
+            echo "❌ GW_USER, GW_PASS, or GW_DEVICE_SN is empty. Ensure repo/org secrets are set and available to this run."
             exit 2
           fi
           mkdir -p logs
