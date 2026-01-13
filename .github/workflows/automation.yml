@@ -2,13 +2,33 @@ name: Energy Automation
 
 on:
   schedule:
-    # Runs every hour at minute 15 — adjust as needed
+    # Kör var 15:e minut
     - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 jobs:
   run-automation:
     runs-on: ubuntu-latest
+
+    env:
+      # Email
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+
+      # Growatt – krävs av updateExportLimit.mjs
+      GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
+      GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
+      DEVICE_SN: ${{ secrets.DEVICE_SN }}
+      INVERTER_PASSWORD: ${{ secrets.INVERTER_PASSWORD }}
+
+      # Tibber
+      TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
+      TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}
+
+      # Script settings
+      USER_AGENT: github-actions/1.0
+      TIMEOUT_MS: 15000
 
     steps:
       - name: Checkout repository
@@ -17,35 +37,10 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: 20
 
       - name: Install dependencies
         run: npm install
 
-      - name: Debug Tibber env (optional)
-        env:
-          TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
-          TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}
-        run: |
-          echo "TIBBER_TOKEN length: ${#TIBBER_TOKEN}"
-          echo "TIBBER_HOME_ID: $TIBBER_HOME_ID"
-
       - name: Run automation script
-        env:
-          # Gmail
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
-
-          # Growatt
-          GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
-          GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
-
-          # Tibber
-          TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
-          TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}
-
-          # Optional
-          USER_AGENT: "github-actions/1.0"
-          TIMEOUT_MS: "15000"
         run: node automation.mjs
