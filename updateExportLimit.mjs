@@ -99,8 +99,8 @@ async function setExportLimit(sessionResponse, deviceSN, exportLimitValue, mode,
   
   const payload = new URLSearchParams({
     deviceSN: deviceSN,
-    type: 'settextparam',
-    param: paramString,
+action: 'maxSet',
+param: `plimitPer:${exportLimitValue}`,
     pwd: inverterPassword || 'growatt20260113' // Default password if not provided
   });
 
