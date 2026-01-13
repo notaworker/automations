@@ -1,51 +1,65 @@
 
 // enable-exportlimit-tcpSet.mjs
-// Replays ShineServer's tcpSet.do (TL-X style: action=tlxSet, type=backflow_setting, serialNum, param1..3)
-// Always includes the Growatt daily password "growattYYYYMMDD" by default (not secret).
-// If needed, auto-retries using UTC+8 date. Allows explicit override or disabling via env.
+// Replays ShineServer "Advanced Set" -> tcpSet.do for TL-X:
+//   action=tlxSet, type=backflow_setting, serialNum, param1..3
+// Adds browser-like headers, follows redirects, visits Referer first,
+// always includes today's installer password growattYYYYMMDD (not secret),
+// retries with UTC+8 date, and supports extra token/plant fields if your portal uses them.
 //
 // References:
-// - Growatt community docs: use daily password growattYYYYMMDD for Advanced Set writes
-//   https://github.com/ealse/GrowattApi (README says: "if you need a password please enter: growattYYYYMMDD")
-// - Reports that portals still accept the daily password for settings
-//   https://github.com/johanmeijer/grott/issues/645
+// - Replay tcpSet.do with action/type/parameters captured from DevTools (Growatt .NET example)  https://github.com/ealse/GrowattApi
+// - Many ShineServer flows accept daily installer password growattYYYYMMDD for Advanced-Set writes (community reports)  https://github.com/johanmeijer/grott/issues/645
+// - Export limit via Advanced Set documented in Growatt guides (historically register 202 => 1/0)  https://bimblesolar.com/docs/growatt-export-limitation-guide.pdf
 
 import fetch from 'node-fetch';
 
-const BASE = 'https://server.growatt.com';
+const BASE = (process.env.GW_SERVER_BASE || 'https://server.growatt.com').replace(/\/+$/, '');
 
 const {
   GROWATT_USERNAME,
   GROWATT_PASSWORD,
 
-  // Required (from your DevTools capture)
-  GW_TCPSET_ACTION,     // tlxSet
-  GW_TCPSET_TYPE,       // backflow_setting
-  GW_TCPSET_SN_KEY,     // serialNum
-  GW_TCPSET_SN_VALUE,   // e.g. QDL3CMN0DK
+  // Required (from DevTools)
+  GW_TCPSET_ACTION,   // tlxSet
+  GW_TCPSET_TYPE,     // backflow_setting
+  GW_TCPSET_SN_KEY,   // serialNum
+  GW_TCPSET_SN_VALUE, // QDL3CMN0DK
 
-  // Per-run values from the workflow (Enable → 1,0,1 | Disable → 0,0,0)
+  // Per-run values (Enable -> 1,0,1 | Disable -> 0,0,0)
   GW_TCPSET_PARAM1,
   GW_TCPSET_PARAM2,
   GW_TCPSET_PARAM3,
 
-  // Optional: explicit Advanced-Set password if you want to supply one
+  // Optional: explicit Advanced-Set password (we auto-compute if not provided)
   GW_TCPSET_ADV_PWD,
 
-  // Optional: plant id (if your DevTools request included it)
-  GW_TCPSET_PLANT_KEY,
-  GW_TCPSET_PLANT_VALUE,
+  // Optional: plant or token fields (only if your DevTools form shows them)
+  GW_TCPSET_PLANT_KEY,     // e.g., plantId
+  GW_TCPSET_PLANT_VALUE,   // e.g., 2198292
+  GW_TCPSET_TOKEN_KEY,     // e.g., token, tokenId, csrf
+  GW_TCPSET_TOKEN_VALUE,   // value from DevTools
 
-  // Optional: the exact Referer captured in DevTools for your Advanced-Set page
+  // Optional: exact Referer you saw in DevTools (Advanced Set page URL)
   GW_TCPSET_REFERER,
 
-  // Optional: set to "true" to skip auto daily password
+  // Optional: JSON with any extra form fields your portal posts (key/value)
+  GW_TCPSET_EXTRA_JSON,    // e.g., {"lang":"en"}
+
+  // Optional: set to 'true' to disable auto daily password
   GW_TCPSET_NO_AUTO_PWD
 } = process.env;
 
-function toParams(obj) { return new URLSearchParams(obj); }
-
-// Tiny cookie jar
+// Helpers
+function params(obj) { return new URLSearchParams(obj); }
+function dailyPwd(tzHours = 0) {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const shifted = new Date(utc + tzHours * 3600000);
+  const y = shifted.getFullYear();
+  const m = String(shifted.getMonth() + 1).padStart(2, '0');
+  const d = String(shifted.getDate()).padStart(2, '0');
+  return `growatt${y}${m}${d}`;
+}
 function mergeCookies(headers, cookieStr) {
   const setCookies = headers.raw()['set-cookie'] || [];
   const jar = new Map();
@@ -66,15 +80,13 @@ function mergeCookies(headers, cookieStr) {
 
 async function login() {
   let cookie = '';
-
   // warm-up
   {
     const r = await fetch(`${BASE}/login.do`, { redirect: 'follow' });
     cookie = mergeCookies(r.headers, cookie);
   }
-
-  // legacy login: form fields are "account" and "password"
-  const body = toParams({ account: GROWATT_USERNAME, password: GROWATT_PASSWORD });
+  // legacy login form fields
+  const body = params({ account: GROWATT_USERNAME, password: GROWATT_PASSWORD });
   const resp = await fetch(`${BASE}/login.do`, {
     method: 'POST',
     redirect: 'follow',
@@ -90,42 +102,46 @@ async function login() {
   });
   cookie = mergeCookies(resp.headers, cookie);
 
-  // Touch index/dashboard to stabilize session
-  const idx = await fetch(`${BASE}/index`, {
+  // visit the *exact* Referer page first (so any tokens/cookies are set)
+  const refererUrl = GW_TCPSET_REFERER || `${BASE}/index`;
+  const ref = await fetch(refererUrl, {
     method: 'GET',
     redirect: 'follow',
     headers: { 'User-Agent': 'Mozilla/5.0', 'Cookie': cookie }
   });
-  cookie = mergeCookies(idx.headers, cookie);
+  cookie = mergeCookies(ref.headers, cookie);
 
-  return cookie;
+  return { cookie, refererUrl };
 }
 
-function makeDailyPwd(tzOffsetHours = 0) {
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const shifted = new Date(utc + tzOffsetHours * 3600000);
-  const yyyy = shifted.getFullYear().toString();
-  const mm = String(shifted.getMonth() + 1).padStart(2, '0');
-  const dd = String(shifted.getDate()).padStart(2, '0');
-  return `growatt${yyyy}${mm}${dd}`;
-}
+function buildPayload(passwordCandidate) {
+  const extra = {};
+  if (GW_TCPSET_PLANT_KEY && GW_TCPSET_PLANT_VALUE) extra[GW_TCPSET_PLANT_KEY] = GW_TCPSET_PLANT_VALUE;
+  if (GW_TCPSET_TOKEN_KEY && GW_TCPSET_TOKEN_VALUE) extra[GW_TCPSET_TOKEN_KEY] = GW_TCPSET_TOKEN_VALUE;
+  if (GW_TCPSET_EXTRA_JSON) {
+    try {
+      Object.assign(extra, JSON.parse(GW_TCPSET_EXTRA_JSON));
+    } catch {
+      // ignore invalid JSON
+    }
+  }
 
-async function postTcpSet(cookie, passwordCandidate) {
-  const payload = {
+  const base = {
     action: GW_TCPSET_ACTION,
     type:   GW_TCPSET_TYPE,
     [GW_TCPSET_SN_KEY]: GW_TCPSET_SN_VALUE,
     param1: GW_TCPSET_PARAM1,
     param2: GW_TCPSET_PARAM2,
-    param3: GW_TCPSET_PARAM3
+    param3: GW_TCPSET_PARAM3,
+    ...extra
   };
-  if (GW_TCPSET_PLANT_KEY && GW_TCPSET_PLANT_VALUE) {
-    payload[GW_TCPSET_PLANT_KEY] = GW_TCPSET_PLANT_VALUE;
-  }
-  if (passwordCandidate) {
-    payload.password = passwordCandidate;
-  }
+
+  if (passwordCandidate) base.password = passwordCandidate;
+  return base;
+}
+
+async function postTcpSet(cookie, refererUrl, passwordCandidate) {
+  const payload = buildPayload(passwordCandidate);
 
   const resp = await fetch(`${BASE}/tcpSet.do`, {
     method: 'POST',
@@ -135,58 +151,64 @@ async function postTcpSet(cookie, passwordCandidate) {
       'Accept': 'application/json, text/javascript, */*; q=0.01',
       'X-Requested-With': 'XMLHttpRequest',
       'Origin': BASE,
-      'Referer': GW_TCPSET_REFERER || `${BASE}/`,
+      'Referer': refererUrl,
       'User-Agent': 'Mozilla/5.0',
       'Cookie': cookie
     },
-    body: toParams(payload)
+    body: params(payload)
   });
 
   const text = await resp.text();
   const ok = resp.ok && (
     /"success"\s*:\s*true/i.test(text) ||
-    /"result"\s*:\s*1/.test(text) ||
+    /"result"\s*:\s*1\b/.test(text) ||
     /"msg"\s*:\s*"success"/i.test(text)
   );
   return { ok, status: resp.status, body: text };
 }
 
 (async () => {
-  if (!GROWATT_USERNAME || !GROWATT_PASSWORD) {
-    throw new Error('Missing GROWATT_USERNAME or GROWATT_PASSWORD');
-  }
-  if (!GW_TCPSET_ACTION || !GW_TCPSET_TYPE || !GW_TCPSET_SN_KEY || !GW_TCPSET_SN_VALUE) {
-    throw new Error('Missing GW_TCPSET_ACTION / GW_TCPSET_TYPE / GW_TCPSET_SN_KEY / GW_TCPSET_SN_VALUE');
+  const required = [
+    ['GROWATT_USERNAME', GROWATT_USERNAME],
+    ['GROWATT_PASSWORD', GROWATT_PASSWORD],
+    ['GW_TCPSET_ACTION',  GW_TCPSET_ACTION],
+    ['GW_TCPSET_TYPE',    GW_TCPSET_TYPE],
+    ['GW_TCPSET_SN_KEY',  GW_TCPSET_SN_KEY],
+    ['GW_TCPSET_SN_VALUE',GW_TCPSET_SN_VALUE],
+    ['GW_TCPSET_PARAM1',  GW_TCPSET_PARAM1],
+    ['GW_TCPSET_PARAM2',  GW_TCPSET_PARAM2],
+    ['GW_TCPSET_PARAM3',  GW_TCPSET_PARAM3]
+  ];
+  for (const [k, v] of required) {
+    if (v === undefined) throw new Error(`Missing env: ${k}`);
   }
 
-  const cookie = await login();
+  const { cookie, refererUrl } = await login();
 
-  // Build a prioritized list of password candidates:
-  // 1) Explicit secret (if provided)
-  // 2) Auto daily password (LOCAL)
-  // 3) Auto daily password (UTC+8)
-  // 4) No password (only if NO_AUTO_PWD=true)
+  // Build candidate passwords:
+  // 1) explicit secret (if provided)
+  // 2) daily growattYYYYMMDD (LOCAL)
+  // 3) daily growattYYYYMMDD (UTC+8)
+  // If NO_AUTO_PWD=true, only use explicit or none.
   const candidates = [];
   if (GW_TCPSET_ADV_PWD) candidates.push(GW_TCPSET_ADV_PWD);
 
-  const autoPwdLocal = makeDailyPwd(0);
-  const autoPwdUTC8  = makeDailyPwd(8);
+  const localPwd = dailyPwd(0);
+  const utc8Pwd  = dailyPwd(8);
 
   if (GW_TCPSET_NO_AUTO_PWD !== 'true') {
-    candidates.push(autoPwdLocal);
-    if (autoPwdUTC8 !== autoPwdLocal) candidates.push(autoPwdUTC8);
+    candidates.push(localPwd);
+    if (utc8Pwd !== localPwd) candidates.push(utc8Pwd);
   } else {
-    // If auto password is disabled, still allow an empty attempt
-    candidates.push(undefined);
+    candidates.push(undefined); // single attempt without password
   }
 
-  // Try candidates until one succeeds
   let last = { ok: false, status: 0, body: '' };
   for (const pwd of candidates) {
-    last = await postTcpSet(cookie, pwd);
+    last = await postTcpSet(cookie, refererUrl, pwd);
     if (last.ok) {
       const tag = pwd
-        ? (pwd === autoPwdLocal ? 'daily (local)' : (pwd === autoPwdUTC8 ? 'daily (UTC+8)' : 'explicit'))
+        ? (pwd === localPwd ? 'daily (local)' : (pwd === utc8Pwd ? 'daily (UTC+8)' : 'explicit'))
         : 'no password';
       console.log(`✓ tcpSet OK with ${tag}:`, last.body.slice(0, 300));
       return;
