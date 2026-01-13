@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       server_base:
-        description: "Optional: Override server base (e.g., https://shineserver.growatt.com)"
+        description: "Optional: Override server base (e.g., https://server.growatt.com)"
         required: false
         default: ""
   # Optional schedule (CET 07:05 daily)
@@ -27,7 +27,6 @@ jobs:
       fail-fast: false
       matrix:
         server_base:
-          - https://shineserver.growatt.com
           - https://server.growatt.com
 
     # Map your secrets to the env vars the scripts use
