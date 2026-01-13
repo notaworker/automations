@@ -1,107 +1,148 @@
 
-name: Growatt Login Test
+// growatt-login-test.mjs
+// Purpose: Log in to Growatt (ShineServer or server.growatt.com), keep session cookies,
+// and verify that /index returns an authenticated dashboard (not the login page).
 
-on:
-  workflow_dispatch:
-    inputs:
-      server_base:
-        description: "Optional: Override server base (e.g., https://shineserver.growatt.com)"
-        required: false
-        default: ""
-  # Uncomment if you want a scheduled check (e.g., daily at 07:05 CET)
-  # schedule:
-  #   - cron: '5 6 * * *'
+import axios from 'axios';
+import { wrapper } from 'axios-cookiejar-support';
+import tough from 'tough-cookie';
+import crypto from 'crypto';
 
-permissions:
-  contents: read
+const GW_SERVER_BASE = process.env.GW_SERVER_BASE || 'https://shineserver.growatt.com';
+const USER = process.env.GW_USER;
+const PASS = process.env.GW_PASS;
+const CAPTCHA = (process.env.GW_VALIDATE_CODE || '').toUpperCase();
 
-concurrency:
-  group: growatt-login-${{ github.ref }}
-  cancel-in-progress: false
+function md5Hex(s) {
+  return crypto.createHash('md5').update(s, 'utf8').digest('hex');
+}
 
-jobs:
-  test-login:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        # Default hosts to try; will be overridden when workflow_dispatch input is set
-        server_base:
-          - https://shineserver.growatt.com
-          - https://server.growatt.com
+function looksAuthenticated(html) {
+  const s = String(html || '');
+  const first300 = s.slice(0, 300);
+  // If it still looks like the login page, treat as unauthenticated
+  if (/data-name="login"|<title>\s*Login\s*<\/title>/i.test(first300)) return { ok: false, first300 };
+  return { ok: true, first300 };
+}
 
-    env:
-      # Use the matrix host unless an explicit workflow input was provided
-      GW_SERVER_BASE: ${{ github.event.inputs.server_base != '' && github.event.inputs.server_base || matrix.server_base }}
-      GW_USER: ${{ secrets.GW_USER }}
-      GW_PASS: ${{ secrets.GW_PASS }}
-      GW_VALIDATE_CODE: ${{ secrets.GW_VALIDATE_CODE }}
+async function loginOnce(client, { account, password, useMd5, validateCode, isReadPact }) {
+  const form = new URLSearchParams();
+  form.set('account', account);
+  if (useMd5) {
+    form.set('password', '');                   // site behavior: blank when sending hash
+    form.set('passwordCrc', md5Hex(password));  // MD5 hash of plaintext password
+  } else {
+    form.set('password', password);             // plaintext fallback when server returns result == 8
+    form.set('passwordCrc', '');
+  }
+  form.set('validateCode', validateCode || ''); // optional 3-char captcha (uppercase)
+  form.set('isReadPact', isReadPact ? '1' : '0');
 
-    steps:
-      - name: 🧾 Checkout
-      # If your script is already in the repo, keep checkout. If not, remove and add a step to create the file.
-        uses: actions/checkout@v4
+  const res = await client.post('/login', form, {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Origin': GW_SERVER_BASE,
+      'Referer': `${GW_SERVER_BASE}/login`,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
+      'Accept': 'application/json, text/javascript, */*; q=0.01'
+    },
+    validateStatus: () => true
+  });
 
-      - name: 🔒 Mask sensitive values in logs
-        run: |
-          echo "::add-mask::${GW_USER}"
-          echo "::add-mask::${GW_PASS}"
-          if [ -n "${GW_VALIDATE_CODE}" ]; then
-            echo "::add-mask::${GW_VALIDATE_CODE}"
-          fi
+  let body;
+  try { body = typeof res.data === 'string' ? JSON.parse(res.data) : res.data; } catch { body = res.data; }
+  return { status: res.status, body };
+}
 
-      - name: 🟢 Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
+async function main() {
+  if (!USER || !PASS) {
+    console.error('Missing GW_USER or GW_PASS env vars');
+    process.exit(2);
+  }
 
-      - name: 📦 Install dependencies
-        run: |
-          npm ci || npm install
-          # Ensure required deps exist even if not listed in package.json
-          npm ls axios axios-cookiejar-support tough-cookie >/dev/null 2>&1 || npm i axios axios-cookiejar-support tough-cookie
+  const jar = new tough.CookieJar();
+  const client = wrapper(axios.create({
+    baseURL: GW_SERVER_BASE,
+    jar,
+    withCredentials: true,
+    maxRedirects: 5,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9'
+    },
+    validateStatus: () => true
+  }));
 
-      # OPTIONAL: If you want to ensure the latest script content is present,
-      # replace the file creation step below with your own content commit.
-      # - name: Ensure script exists (skip if already committed to repo)
-      #   shell: bash
-      #   run: |
-      #     test -f growatt-login-test.mjs && exit 0
-      #     echo "❌ growatt-login-test.mjs not found in repo. Commit it or generate it here."
-      #     exit 1
+  // Preflight GET to establish cookies
+  let res = await client.get('/login', { headers: { Referer: GW_SERVER_BASE + '/' } });
+  console.log(`GET ${GW_SERVER_BASE}/login → ${res.status}`);
 
-      - name: ▶️ Run login flow against ${{ env.GW_SERVER_BASE }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p logs
-          # Create a safe filename per host
-          SAFE_NAME="$(echo "${GW_SERVER_BASE}" | sed 's/[^a-zA-Z0-9]/_/g')"
-          LOG_FILE="logs/login_${SAFE_NAME}.log"
+  // 1) Try MD5-first (default page behavior)
+  let { body } = await loginOnce(client, {
+    account: USER,
+    password: PASS,
+    useMd5: true,
+    validateCode: CAPTCHA,
+    isReadPact: true // pre-acknowledge privacy policy
+  });
+  console.log('POST /login (MD5) →', body?.result);
 
-          echo "Testing host: ${GW_SERVER_BASE}"
-          echo "Writing log to: ${LOG_FILE}"
-          # Run the test; capture output to a log while preserving exit code
-          set +e
-          node growatt-login-test.mjs | tee "${LOG_FILE}"
-          CODE=${PIPESTATUS[0]}
-          set -e
+  // 2) Handle server result codes
+  if (body?.result === 8) {
+    // Server says MD5 mismatch → retry with plaintext
+    ({ body } = await loginOnce(client, {
+      account: USER,
+      password: PASS,
+      useMd5: false,
+      validateCode: CAPTCHA,
+      isReadPact: true
+    }));
+    console.log('POST /login (plaintext retry) →', body?.result);
+  } else if (body?.result === -4) {
+    // Privacy policy prompt; attempt to mark accepted then retry
+    try {
+      await client.post('/login/updateProtocolStatusByUser', new URLSearchParams({ accountName: USER }), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      ({ body } = await loginOnce(client, {
+        account: USER,
+        password: PASS,
+        useMd5: true,
+        validateCode: CAPTCHA,
+        isReadPact: true
+      }));
+      console.log('POST /login (after privacy accept) →', body?.result);
+    } catch (e) {
+      console.warn('Privacy acceptance call failed:', e?.message || e);
+    }
+  } else if (body?.result === -1) {
+    console.error('❌ Server requires verification code (captcha). Provide GW_VALIDATE_CODE (3 chars, uppercase).');
+    process.exit(2);
+  } else if (body?.result === -2) {
+    console.error('❌ Username or password error (server may now require captcha).');
+    process.exit(2);
+  } else if (body?.result === 3 || body?.result === '3') {
+    console.error('❌ Region selection flow detected. Use the correct regional base URL for your account.');
+    process.exit(2);
+  }
 
-          if [ $CODE -ne 0 ]; then
-            echo "❌ Script exited with code $CODE"
-          else
-            echo "✅ Script completed successfully"
-          fi
+  // 3) Verify session by fetching /index
+  res = await client.get('/index', { headers: { Referer: `${GW_SERVER_BASE}/login` } });
+  console.log(`GET ${GW_SERVER_BASE}/index → ${res.status}`);
 
-          # Surface the exit code to the job
-          exit $CODE
+  const { ok, first300 } = looksAuthenticated(res.data);
+  if (!ok) {
+    console.error('❌ Login did not validate. Still seeing login page.');
+    console.info(`ℹ️ First 300 chars: ${first300}`);
+    process.exit(2);
+  }
 
-      - name: ⬆️ Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: growatt-login-logs-${{ github.run_id }}
-          path: logs/
-          if-no-files-found: warn
+  console.log('✅ Logged in. Session appears valid.');
+  console.log(first300);
+}
+
+main().catch(err => {
+  console.error(err);
+  process.exit(2);
+});
