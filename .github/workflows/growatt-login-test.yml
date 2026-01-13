@@ -59,7 +59,7 @@ jobs:
         run: |
           npm ci || npm install
           # Ensure required deps are present
-          npm ls axios axios-cookiejar-support tough-cookie >/dev/null 2>&1 || npm i axios axios-cookiejar-support tough-cookie
+          npm ls axios axios-cookiejar-support tough-cookie cheerio >/dev/null 2>&1 || npm i axios axios-cookiejar-support tough-cookie cheerio
 
       # Make a filesystem-safe key from the server base for log/artifact names
       - name: 🧹 Sanitize server base for filenames
