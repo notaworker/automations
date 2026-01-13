@@ -65,10 +65,18 @@ jobs:
           GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
           GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
           GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
-          # ↓↓↓ Paste values captured from DevTools for your account/firmware ↓↓↓
+
+          # Required (copy from your DevTools capture; see step 3 below)
           GW_TCPSET_ACTION: ${{ secrets.GW_TCPSET_ACTION }}
           GW_TCPSET_TYPE:   ${{ secrets.GW_TCPSET_TYPE }}
+
+          # Parameters are set from the workflow input (enable/disable)
           GW_TCPSET_PARAMETERS: ${{ steps.prep.outputs.PARAMS }}
-          # Optional if your request includes it:
-          GW_TCPSET_ADV_PWD: ${{ secrets.GW_TCPSET_ADV_PWD }}
+
+          # Optional (only if your DevTools request shows them)
+          GW_TCPSET_ADV_PWD:     ${{ secrets.GW_TCPSET_ADV_PWD }}
+          GW_TCPSET_SN_KEY:      ${{ secrets.GW_TCPSET_SN_KEY }}
+          GW_TCPSET_SN_VALUE:    ${{ secrets.GW_TCPSET_SN_VALUE }}
+          GW_TCPSET_PLANT_KEY:   ${{ secrets.GW_TCPSET_PLANT_KEY }}
+          GW_TCPSET_PLANT_VALUE: ${{ secrets.GW_TCPSET_PLANT_VALUE }}
         run: node enable-exportlimit-tcpSet.mjs
