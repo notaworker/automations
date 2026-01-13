@@ -8,6 +8,7 @@ on:
         description: "Optional: Override server base (e.g., https://shineserver.growatt.com)"
         required: false
         default: ""
+  # Optional schedule (CET 07:05 daily)
   # schedule:
   #   - cron: '5 6 * * *'
 
@@ -29,13 +30,14 @@ jobs:
           - https://shineserver.growatt.com
           - https://server.growatt.com
 
-    # Map secrets to the env your scripts expect
+    # Map your secrets to the env vars the scripts use
     env:
       GW_SERVER_BASE: ${{ github.event.inputs.server_base != '' && github.event.inputs.server_base || matrix.server_base }}
       GW_USER: ${{ secrets.GROWATT_USERNAME }}
       GW_PASS: ${{ secrets.GROWATT_PASSWORD }}
-      GW_VALIDATE_CODE: ${{ secrets.GW_VALIDATE_CODE }}
       GW_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
+      # Only needed if your account is currently showing captcha
+      GW_VALIDATE_CODE: ${{ secrets.GW_VALIDATE_CODE }}
 
     steps:
       - name: 🧾 Checkout
@@ -57,14 +59,14 @@ jobs:
       - name: 📦 Install dependencies
         run: |
           npm ci || npm install
+          # Ensure required deps are present
           npm ls axios axios-cookiejar-support tough-cookie >/dev/null 2>&1 || npm i axios axios-cookiejar-support tough-cookie
 
-      # Sanitize the server base for file and artifact names
+      # Make a filesystem-safe key from the server base for log/artifact names
       - name: 🧹 Sanitize server base for filenames
         id: sanitize
         shell: bash
         run: |
-          # Remove scheme and replace anything not [A-Za-z0-9._-] with underscore
           SAFE="$(echo "${GW_SERVER_BASE}" | sed -E 's~^https?://~~; s~[^A-Za-z0-9._-]~_~g')"
           echo "safe=${SAFE}" >> "$GITHUB_OUTPUT"
           echo "Using safe host key: ${SAFE}"
@@ -74,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${GW_USER}" ] || [ -z "${GW_PASS}" ]; then
-            echo "❌ GW_USER or GW_PASS is empty. Check that repository/org secrets GROWATT_USERNAME / GROWATT_PASSWORD are set and available to this workflow."
+            echo "❌ GW_USER or GW_PASS is empty. Ensure repo/org secrets GROWATT_USERNAME and GROWATT_PASSWORD are set and available to this run."
             exit 2
           fi
           mkdir -p logs
@@ -90,3 +92,9 @@ jobs:
 
       - name: ⬆️ Upload logs (unique + sanitized name)
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: growatt-login-logs-${{ github.run_id }}-${{ steps.sanitize.outputs.safe }}
+          path: logs/
+          if-no-files-found: warn
+          overwrite: true
