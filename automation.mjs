@@ -12,8 +12,10 @@ const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_PASS = process.env.GMAIL_APP_PASSWORD;
 const EMAIL_RECIPIENT = process.env.EMAIL_RECIPIENT;
 
-const GROWATT_TOKEN = process.env.GROWATT_API_TOKEN;
+const GROWATT_USERNAME = process.env.GROWATT_USERNAME;
+const GROWATT_PASSWORD = process.env.GROWATT_PASSWORD;
 const GROWATT_DEVICE_SN = process.env.GROWATT_DEVICE_SN;
+const INVERTER_PASSWORD = process.env.INVERTER_PASSWORD || "";
 
 const TIBBER_TOKEN = process.env.TIBBER_TOKEN;
 const TIBBER_HOME_ID = process.env.TIBBER_HOME_ID;
@@ -51,39 +53,54 @@ async function sendEmail(subject, text) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GROWATT TRIGGER
+// GROWATT LOGIN + EXPORT LIMIT SETTER
 // ─────────────────────────────────────────────────────────────
 
-async function sendTrigger(value) {
-  if (!GROWATT_TOKEN || !GROWATT_DEVICE_SN) {
-    console.error("Missing Growatt environment variables.");
-    return;
-  }
+async function growattLogin() {
+  const payload = new URLSearchParams({
+    account: GROWATT_USERNAME,
+    password: GROWATT_PASSWORD,
+    validateCode: "",
+  });
 
-  const headers = new Headers();
-  headers.append("token", GROWATT_TOKEN);
-  headers.append("Content-Type", "application/x-www-form-urlencoded");
+  const res = await fetch("https://server.growatt.com/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: payload.toString(),
+    redirect: "manual",
+  });
 
-  const body = new URLSearchParams();
-  body.append("deviceSn", GROWATT_DEVICE_SN);
-  body.append("deviceType", "inv");
-  body.append("value", value);
+  if (!res.ok) throw new Error("Growatt login failed");
 
-  try {
-    const response = await fetch(
-      "https://openapi.growatt.com/v4/new-api/setOnOrOff",
-      {
-        method: "POST",
-        headers,
-        body,
-      }
-    );
+  return res.headers.get("set-cookie") || "";
+}
 
-    const text = await response.text();
-    console.log("Growatt response:", text);
-  } catch (err) {
-    console.error("Growatt trigger failed:", err);
-  }
+async function setExportLimitPercent(percent) {
+  console.log(`Setting Growatt export limit to ${percent}%...`);
+
+  const cookie = await growattLogin();
+
+  const payload = new URLSearchParams({
+    action: "tlxSet",
+    serialNum: GROWATT_DEVICE_SN,
+    type: "backflow_setting",
+    param1: "1", // enable export limit
+    param2: String(percent), // percentage
+    param3: "0",
+    pwd: INVERTER_PASSWORD,
+  });
+
+  const res = await fetch("https://server.growatt.com/tcpSet.do", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Cookie: cookie,
+    },
+    body: payload.toString(),
+  });
+
+  const text = await res.text();
+  console.log("Growatt response:", text);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -123,7 +140,6 @@ async function getCurrentPrice() {
 async function getTibberPower() {
   const HTTP_GRAPHQL_ENDPOINT = "https://api.tibber.com/v1-beta/gql";
 
-  // Step 1: Get WebSocket URL
   const res = await fetch(HTTP_GRAPHQL_ENDPOINT, {
     method: "POST",
     headers: {
@@ -141,7 +157,6 @@ async function getTibberPower() {
 
   if (!wsUrl) throw new Error("No Tibber WebSocket URL");
 
-  // Step 2: Connect WebSocket
   class HeaderWebSocket extends WebSocket {
     constructor(url, protocols) {
       super(url, protocols, {
@@ -210,7 +225,7 @@ function getLastState() {
   try {
     return fs.readFileSync(".growatt_state", "utf8").trim();
   } catch {
-    return "ON"; // default if file missing
+    return "LIMIT_100"; // default
   }
 }
 
@@ -231,7 +246,6 @@ async function main() {
   console.log("Price:", price, "SEK/kWh");
   console.log("Power:", power, "W");
 
-  // NEW: Send email if price is negative
   if (price < 0) {
     await sendEmail(
       "⚠️ Negative electricity price detected",
@@ -242,32 +256,32 @@ async function main() {
   const priceNegative = price < 0;
   const powerNegative = power < -50;
 
-  let desiredState = "1"; // default ON
+  let desired = "LIMIT_100";
   if (priceNegative && powerNegative) {
-    desiredState = "0"; // OFF
+    desired = "LIMIT_0";
   }
 
-  const lastState = getLastState();
-  console.log("Last Growatt state:", lastState);
-  console.log("Desired Growatt state:", desiredState === "0" ? "OFF" : "ON");
+  const last = getLastState();
+  console.log("Last state:", last);
+  console.log("Desired state:", desired);
 
-  // NEW LOGIC: Only send ON if previously OFF
-  if (desiredState === "1" && lastState === "ON") {
-    console.log("Growatt already ON — skipping ON command.");
+  if (desired === last) {
+    console.log("No change needed.");
     return;
   }
 
-  // Always allow OFF
-  await sendTrigger(desiredState);
+  if (desired === "LIMIT_0") {
+    await setExportLimitPercent(0);
+  } else {
+    await setExportLimitPercent(100);
+  }
 
-  // Save new state
-  saveState(desiredState === "0" ? "OFF" : "ON");
+  saveState(desired);
 
-  // Email on state change
   await sendEmail(
-    `Growatt state changed → ${desiredState === "0" ? "OFF" : "ON"}`,
-    `Price: ${price} SEK/kWh\nPower: ${power} W\nAction: ${
-      desiredState === "0" ? "Power OFF" : "Power ON"
+    `Growatt export limit changed → ${desired}`,
+    `Price: ${price} SEK/kWh\nPower: ${power} W\nNew export limit: ${
+      desired === "LIMIT_0" ? "0%" : "100%"
     }`
   );
 }
