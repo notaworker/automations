@@ -8,7 +8,7 @@ import { wrapper } from 'axios-cookiejar-support';
 import tough from 'tough-cookie';
 import crypto from 'crypto';
 
-const GW_SERVER_BASE = process.env.GW_SERVER_BASE || 'https://shineserver.growatt.com';
+const GW_SERVER_BASE = process.env.GW_SERVER_BASE || 'https://server.growatt.com';
 const USER = process.env.GW_USER;
 const PASS = process.env.GW_PASS;
 const CAPTCHA = (process.env.GW_VALIDATE_CODE || '').toUpperCase();
