@@ -1,7 +1,7 @@
 
 // enable-exportlimit-tcpSet.mjs
-// Logs in to ShineServer, then replays the exact tcpSet.do payload your browser sends.
-// It also supports optional fields (serial number / plant id) if your account requires them.
+// Replays the ShineServer tcpSet.do form your browser sends.
+// Supports either "parameters" (legacy) or discrete param1/param2/param3 (TL-X portal style).
 
 import fetch from 'node-fetch';
 
@@ -10,31 +10,32 @@ const BASE = 'https://server.growatt.com';
 const {
   GROWATT_USERNAME,
   GROWATT_PASSWORD,
-  GROWATT_DEVICE_SN,       // only for an optional sanity check
 
-  // Required (from DevTools -> the tcpSet.do request captured once)
-  GW_TCPSET_ACTION,        // e.g., "inverterParamSet"  (copy verbatim from your request)
-  GW_TCPSET_TYPE,          // e.g., "tlx"               (copy verbatim)
+  // Required (from DevTools request you captured)
+  GW_TCPSET_ACTION,        // e.g., tlxSet
+  GW_TCPSET_TYPE,          // e.g., backflow_setting
 
-  // We compute the parameters [["202","1"]] in the workflow, so this env is provided by Actions:
-  GW_TCPSET_PARAMETERS,    // e.g., '["202","1"]' or '["202","0"]'  (quotes included)
+  // We'll supply these per-run from the workflow:
+  GW_TCPSET_PARAM1,        // e.g., "1" or "0"
+  GW_TCPSET_PARAM2,        // e.g., "0"
+  GW_TCPSET_PARAM3,        // e.g., "1" or "0"
 
-  // Optional (if present in your DevTools request)
-  GW_TCPSET_ADV_PWD,       // e.g., growattYYYYMMDD for the day
+  // Optional if your portal still uses the legacy array form (not used for TL-X you showed)
+  GW_TCPSET_PARAMETERS,    // e.g., '["202","1"]'
 
-  // Optional extra fields (depends on your portal payload)
-  GW_TCPSET_SN_KEY,        // e.g., "serialNumber", "deviceSn", "sn"
-  GW_TCPSET_SN_VALUE,      // usually your inverter S/N (paste from the request)
+  // Optional fields your portal might require
+  GW_TCPSET_SN_KEY,        // e.g., "serialNum"
+  GW_TCPSET_SN_VALUE,      // e.g., your inverter SN "QDL3CMN0DK"
   GW_TCPSET_PLANT_KEY,     // e.g., "plantId"
-  GW_TCPSET_PLANT_VALUE    // plant id (paste from the request)
+  GW_TCPSET_PLANT_VALUE,   // e.g., "2198292"
+  GW_TCPSET_ADV_PWD        // e.g., growattYYYYMMDD (if your portal asks for it)
 } = process.env;
 
-// --- small cookie jar ---
+// --- small cookie jar helper ---
 function collectCookies(headers, cookie) {
   const setCookies = headers.raw()['set-cookie'] || [];
   const entries = (cookie ? cookie.split(';').map(c => c.trim()).filter(Boolean) : []);
   const jar = new Map(entries.map(c => [c.split('=')[0], c]));
-
   for (const sc of setCookies) {
     const first = sc.split(';')[0];
     if (!first) continue;
@@ -47,13 +48,13 @@ function collectCookies(headers, cookie) {
 async function login() {
   let cookie = '';
 
-  // Warm-up GET to pick initial cookies
+  // Warm-up GET to pick up initial cookies
   {
     const r = await fetch(`${BASE}/login.do`, { redirect: 'manual' });
     cookie = collectCookies(r.headers, cookie);
   }
 
-  // Actual login POST (ShineServer legacy login uses form fields "account" and "password")
+  // Legacy Shine login uses form fields "account" and "password"
   const body = new URLSearchParams({
     account: GROWATT_USERNAME,
     password: GROWATT_PASSWORD
@@ -75,14 +76,11 @@ async function login() {
 
   cookie = collectCookies(resp.headers, cookie);
 
-  // Touch index to finalize the session (some deployments require this)
+  // Touch index to finalize session on some deployments
   const idx = await fetch(`${BASE}/index`, {
     method: 'GET',
     redirect: 'manual',
-    headers: {
-      'User-Agent': 'Mozilla/5.0',
-      'Cookie': cookie
-    }
+    headers: { 'User-Agent': 'Mozilla/5.0', 'Cookie': cookie }
   });
   cookie = collectCookies(idx.headers, cookie);
 
@@ -90,17 +88,26 @@ async function login() {
 }
 
 async function tcpSet(cookie) {
-  // Build payload exactly like the browser form — all values are strings
   const payload = {
     action: GW_TCPSET_ACTION,
-    type: GW_TCPSET_TYPE,
-    parameters: GW_TCPSET_PARAMETERS
+    type: GW_TCPSET_TYPE
   };
-  if (GW_TCPSET_ADV_PWD) payload.password = GW_TCPSET_ADV_PWD;
 
-  // Extra fields if your portal includes them
+  // Include SN/Plant if provided
   if (GW_TCPSET_SN_KEY && GW_TCPSET_SN_VALUE) payload[GW_TCPSET_SN_KEY] = GW_TCPSET_SN_VALUE;
   if (GW_TCPSET_PLANT_KEY && GW_TCPSET_PLANT_VALUE) payload[GW_TCPSET_PLANT_KEY] = GW_TCPSET_PLANT_VALUE;
+
+  // Include password if your portal requires it
+  if (GW_TCPSET_ADV_PWD) payload.password = GW_TCPSET_ADV_PWD;
+
+  // Prefer discrete param1/2/3 for TL-X; fall back to legacy array if provided
+  if (GW_TCPSET_PARAM1 !== undefined) payload.param1 = GW_TCPSET_PARAM1;
+  if (GW_TCPSET_PARAM2 !== undefined) payload.param2 = GW_TCPSET_PARAM2;
+  if (GW_TCPSET_PARAM3 !== undefined) payload.param3 = GW_TCPSET_PARAM3;
+
+  if (!payload.param1 && !payload.param2 && !payload.param3 && GW_TCPSET_PARAMETERS) {
+    payload.parameters = GW_TCPSET_PARAMETERS; // legacy array form
+  }
 
   const resp = await fetch(`${BASE}/tcpSet.do`, {
     method: 'POST',
@@ -117,14 +124,13 @@ async function tcpSet(cookie) {
   });
 
   const text = await resp.text();
-  // Server returns various shapes, attempt detection:
-  const isOk = resp.ok && (
+  const ok = resp.ok && (
     /"success"\s*:\s*true/i.test(text) ||
     /"result"\s*:\s*1/.test(text) ||
     /"msg"\s*:\s*"success"/i.test(text)
   );
 
-  if (!isOk) {
+  if (!ok) {
     throw new Error(`tcpSet failed. HTTP ${resp.status}. Body: ${text}`);
   }
   console.log('✓ tcpSet OK:', text.slice(0, 300));
@@ -134,18 +140,11 @@ async function tcpSet(cookie) {
   if (!GROWATT_USERNAME || !GROWATT_PASSWORD) {
     throw new Error('Missing GROWATT_USERNAME or GROWATT_PASSWORD');
   }
-  if (!GW_TCPSET_ACTION || !GW_TCPSET_TYPE || !GW_TCPSET_PARAMETERS) {
-    throw new Error('Missing one of GW_TCPSET_ACTION / GW_TCPSET_TYPE / GW_TCPSET_PARAMETERS');
+  if (!GW_TCPSET_ACTION || !GW_TCPSET_TYPE) {
+    throw new Error('Missing GW_TCPSET_ACTION or GW_TCPSET_TYPE');
   }
 
   const cookie = await login();
-
-  // Optional sanity check: try to load a device page (non-fatal)
-  try {
-    const page = await fetch(`${BASE}/device/deviceList.do`, { headers: { Cookie: cookie } });
-    await page.text();
-  } catch { /* ignore */ }
-
   await tcpSet(cookie);
 })().catch(err => {
   console.error('❌ Error:', err?.message || err);
