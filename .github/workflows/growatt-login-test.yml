@@ -1,51 +1,107 @@
 
-name: Growatt – Login Test
+name: Growatt Login Test
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      server_base:
+        description: "Optional: Override server base (e.g., https://shineserver.growatt.com)"
+        required: false
+        default: ""
+  # Uncomment if you want a scheduled check (e.g., daily at 07:05 CET)
+  # schedule:
+  #   - cron: '5 6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: growatt-login-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  login-test:
+  test-login:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Default hosts to try; will be overridden when workflow_dispatch input is set
+        server_base:
+          - https://shineserver.growatt.com
+          - https://server.growatt.com
+
+    env:
+      # Use the matrix host unless an explicit workflow input was provided
+      GW_SERVER_BASE: ${{ github.event.inputs.server_base != '' && github.event.inputs.server_base || matrix.server_base }}
+      GW_USER: ${{ secrets.GW_USER }}
+      GW_PASS: ${{ secrets.GW_PASS }}
+      GW_VALIDATE_CODE: ${{ secrets.GW_VALIDATE_CODE }}
+
     steps:
-      - name: Checkout
+      - name: 🧾 Checkout
+      # If your script is already in the repo, keep checkout. If not, remove and add a step to create the file.
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: 🔒 Mask sensitive values in logs
+        run: |
+          echo "::add-mask::${GW_USER}"
+          echo "::add-mask::${GW_PASS}"
+          if [ -n "${GW_VALIDATE_CODE}" ]; then
+            echo "::add-mask::${GW_VALIDATE_CODE}"
+          fi
+
+      - name: 🟢 Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      - name: Ensure lockfile
-        id: lock
+      - name: 📦 Install dependencies
         run: |
-          if [ ! -f package-lock.json ]; then
-            npm install --package-lock-only
-            echo "created=true" >> $GITHUB_OUTPUT
+          npm ci || npm install
+          # Ensure required deps exist even if not listed in package.json
+          npm ls axios axios-cookiejar-support tough-cookie >/dev/null 2>&1 || npm i axios axios-cookiejar-support tough-cookie
+
+      # OPTIONAL: If you want to ensure the latest script content is present,
+      # replace the file creation step below with your own content commit.
+      # - name: Ensure script exists (skip if already committed to repo)
+      #   shell: bash
+      #   run: |
+      #     test -f growatt-login-test.mjs && exit 0
+      #     echo "❌ growatt-login-test.mjs not found in repo. Commit it or generate it here."
+      #     exit 1
+
+      - name: ▶️ Run login flow against ${{ env.GW_SERVER_BASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          # Create a safe filename per host
+          SAFE_NAME="$(echo "${GW_SERVER_BASE}" | sed 's/[^a-zA-Z0-9]/_/g')"
+          LOG_FILE="logs/login_${SAFE_NAME}.log"
+
+          echo "Testing host: ${GW_SERVER_BASE}"
+          echo "Writing log to: ${LOG_FILE}"
+          # Run the test; capture output to a log while preserving exit code
+          set +e
+          node growatt-login-test.mjs | tee "${LOG_FILE}"
+          CODE=${PIPESTATUS[0]}
+          set -e
+
+          if [ $CODE -ne 0 ]; then
+            echo "❌ Script exited with code $CODE"
           else
-            echo "created=false" >> $GITHUB_OUTPUT
+            echo "✅ Script completed successfully"
           fi
 
-      - name: Commit lockfile (first run only)
-        if: steps.lock.outputs.created == 'true'
-        uses: EndBug/add-and-commit@v9
+          # Surface the exit code to the job
+          exit $CODE
+
+      - name: ⬆️ Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          add: 'package-lock.json'
-          message: 'chore: add package-lock.json (auto)'
-          default_author: github_actions
-
-      - name: Install deps
-        run: |
-          if [ "${{ steps.lock.outputs.created }}" = "true" ]; then
-            npm install
-          else
-            npm ci
-          fi
-
-      - name: Login test
-        env:
-          GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
-          GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
-          # Optional: set if your account uses another host (e.g., server-us.growatt.com or server.smten.com)
-          # GW_SERVER_BASE: https://server.growatt.com
-        run: node growatt-login-test.mjs
+          name: growatt-login-logs-${{ github.run_id }}
+          path: logs/
+          if-no-files-found: warn
