@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 jobs:
-  write-register-202:
+  write-backflow-setting:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +24,6 @@ jobs:
         with:
           node-version: '20'
 
-      # Create lockfile on first run (no cache first time)
       - name: Ensure lockfile
         id: lock
         run: |
@@ -51,32 +50,34 @@ jobs:
             npm ci
           fi
 
-      - name: Set tcpSet parameters from input (202 = enable/disable)
+      - name: Prepare param1/2/3 from input
         id: prep
         run: |
           if [ "${{ github.event.inputs.enable }}" = "1" ]; then
-            echo 'PARAMS=["202","1"]' >> $GITHUB_OUTPUT
+            echo "P1=1" >> $GITHUB_OUTPUT
+            echo "P2=0" >> $GITHUB_OUTPUT
+            echo "P3=1" >> $GITHUB_OUTPUT
           else
-            echo 'PARAMS=["202","0"]' >> $GITHUB_OUTPUT
+            echo "P1=0" >> $GITHUB_OUTPUT
+            echo "P2=0" >> $GITHUB_OUTPUT
+            echo "P3=0" >> $GITHUB_OUTPUT
           fi
 
-      - name: Call tcpSet.do (register 202 → 1/0)
+      - name: tcpSet.do backflow_setting (tlxSet)
         env:
           GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
           GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
-          GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
 
-          # Required (copy from your DevTools capture; see step 3 below)
-          GW_TCPSET_ACTION: ${{ secrets.GW_TCPSET_ACTION }}
-          GW_TCPSET_TYPE:   ${{ secrets.GW_TCPSET_TYPE }}
+          # From your DevTools capture:
+          GW_TCPSET_ACTION: tlxSet
+          GW_TCPSET_TYPE: backflow_setting
+          GW_TCPSET_SN_KEY: serialNum
+          GW_TCPSET_SN_VALUE: QDL3CMN0DK
+          # Optional if your request included it (often accepted):
+          # GW_TCPSET_ADV_PWD: ${{ secrets.GW_TCPSET_ADV_PWD }}
 
-          # Parameters are set from the workflow input (enable/disable)
-          GW_TCPSET_PARAMETERS: ${{ steps.prep.outputs.PARAMS }}
-
-          # Optional (only if your DevTools request shows them)
-          GW_TCPSET_ADV_PWD:     ${{ secrets.GW_TCPSET_ADV_PWD }}
-          GW_TCPSET_SN_KEY:      ${{ secrets.GW_TCPSET_SN_KEY }}
-          GW_TCPSET_SN_VALUE:    ${{ secrets.GW_TCPSET_SN_VALUE }}
-          GW_TCPSET_PLANT_KEY:   ${{ secrets.GW_TCPSET_PLANT_KEY }}
-          GW_TCPSET_PLANT_VALUE: ${{ secrets.GW_TCPSET_PLANT_VALUE }}
+          # Discrete params
+          GW_TCPSET_PARAM1: ${{ steps.prep.outputs.P1 }}
+          GW_TCPSET_PARAM2: ${{ steps.prep.outputs.P2 }}
+          GW_TCPSET_PARAM3: ${{ steps.prep.outputs.P3 }}
         run: node enable-exportlimit-tcpSet.mjs
