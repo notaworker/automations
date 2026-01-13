@@ -12,29 +12,38 @@ on:
         options: ["1", "0"]
 
 permissions:
-  contents: write
+  contents: write  # needed to commit package-lock.json on first run
 
 jobs:
   write-backflow-setting:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    # Optional: avoid overlapping runs
+    concurrency:
+      group: growatt-exportlimit
+      cancel-in-progress: false
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
+      # Create lockfile on the first run so subsequent installs can use `npm ci`
       - name: Ensure lockfile
         id: lock
         run: |
           if [ ! -f package-lock.json ]; then
+            echo "No package-lock.json found. Generating…"
             npm install --package-lock-only
             echo "created=true" >> $GITHUB_OUTPUT
           else
             echo "created=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Commit lockfile
+      - name: Commit lockfile (first run only)
         if: steps.lock.outputs.created == 'true'
         uses: EndBug/add-and-commit@v9
         with:
@@ -42,7 +51,7 @@ jobs:
           message: 'chore: add package-lock.json (auto)'
           default_author: github_actions
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           if [ "${{ steps.lock.outputs.created }}" = "true" ]; then
             npm install
@@ -50,6 +59,9 @@ jobs:
             npm ci
           fi
 
+      # Map your TL‑X "backflow_setting" payload:
+      # Enable  -> param1=1, param2=0, param3=1
+      # Disable -> param1=0, param2=0, param3=0
       - name: Prepare param1/2/3 from input
         id: prep
         run: |
@@ -65,19 +77,37 @@ jobs:
 
       - name: tcpSet.do backflow_setting (tlxSet)
         env:
+          # Login credentials (repo secrets)
           GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
           GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
 
-          # From your DevTools capture:
+          # --- TL‑X payload fields from your DevTools capture ---
           GW_TCPSET_ACTION: tlxSet
           GW_TCPSET_TYPE: backflow_setting
           GW_TCPSET_SN_KEY: serialNum
           GW_TCPSET_SN_VALUE: QDL3CMN0DK
-          # Optional if your request included it (often accepted):
-          # GW_TCPSET_ADV_PWD: ${{ secrets.GW_TCPSET_ADV_PWD }}
 
-          # Discrete params
+          # Per-run params, derived from input above
           GW_TCPSET_PARAM1: ${{ steps.prep.outputs.P1 }}
           GW_TCPSET_PARAM2: ${{ steps.prep.outputs.P2 }}
           GW_TCPSET_PARAM3: ${{ steps.prep.outputs.P3 }}
+
+          # --- Strongly recommended: set the exact Referer you saw in DevTools ---
+          # Example (adjust to match your portal's "Request Headers → Referer"):
+          # GW_TCPSET_REFERER: https://server.growatt.com/device/inverterParamSet.do?deviceSn=QDL3CMN0DK
+
+          # --- Optional: if your DevTools "Form Data" also shows plant/token-like fields, add them ---
+          # GW_TCPSET_PLANT_KEY: plantId
+          # GW_TCPSET_PLANT_VALUE: 2198292
+          # GW_TCPSET_TOKEN_KEY: token
+          # GW_TCPSET_TOKEN_VALUE: <value-copied-from-DevTools>
+
+          # --- Optional: override server base if your account uses a different hostname ---
+          # GW_SERVER_BASE: https://server.growatt.com
+
+          # --- Optional: if you want to provide an explicit password (not needed; script auto-builds growattYYYYMMDD) ---
+          # GW_TCPSET_ADV_PWD: ${{ secrets.GW_TCPSET_ADV_PWD }}
+
+          # --- Optional: disable auto daily password (for debugging) ---
+          # GW_TCPSET_NO_AUTO_PWD: 'true'
         run: node enable-exportlimit-tcpSet.mjs
