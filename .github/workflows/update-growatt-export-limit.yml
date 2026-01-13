@@ -1,0 +1,39 @@
+name: Update Growatt Export Limit
+
+on:
+  # Trigger manually
+  workflow_dispatch:
+    inputs:
+      export_limit:
+        description: 'Export limit percentage (0-100%)'
+        required: true
+        default: '50'
+      
+  # Or trigger on a schedule (e.g., daily at 8 AM)
+  schedule:
+    - cron: '0 8 * * *'
+
+jobs:
+  update-export-limit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install node-fetch
+      
+      - name: Update Growatt Export Limit
+        env:
+          GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
+          GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
+          DEVICE_SN: ${{ secrets.DEVICE_SN }}
+          EXPORT_LIMIT_VALUE: ${{ github.event.inputs.export_limit || '50' }}
+          EXPORT_LIMIT_MODE: 'Percent'
+          ENABLE_METER: 'Enable Meter'
+          INVERTER_PASSWORD: ${{ secrets.INVERTER_PASSWORD }}
+        run: node updateExportLimit.mjs
