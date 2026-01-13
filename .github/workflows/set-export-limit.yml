@@ -12,7 +12,7 @@ on:
         options: ["1", "0"]
 
 permissions:
-  contents: write  # needed to commit package-lock.json on first run
+  contents: write
 
 jobs:
   toggle-export-limit:
@@ -22,11 +22,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node (no cache on first run)
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
 
       - name: Ensure lockfile exists (create if missing)
         id: lock
@@ -47,8 +46,20 @@ jobs:
           message: 'chore: add package-lock.json (auto)'
           default_author: github_actions
 
+      - name: Setup Node (re-run with cache once lockfile present)
+        if: steps.lock.outputs.created == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ "${{ steps.lock.outputs.created }}" = "true" ]; then
+            npm install
+          else
+            npm ci
+          fi
 
       - name: Toggle Export Limit
         env:
@@ -57,8 +68,4 @@ jobs:
           GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
           GROWATT_SERVER_BASE: https://server.growatt.com
           EXPORT_LIMIT_ENABLE: ${{ github.event.inputs.enable }}
-          # Optional overrides if autodetect fails for your firmware:
-          # GROWATT_FUNC: "writeRegister"
-          # GROWATT_REG_PARAM: "reg"
-          # GROWATT_VAL_PARAM: "val"
         run: node set-export-limit.mjs
