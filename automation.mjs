@@ -72,7 +72,13 @@ async function growattLogin() {
 
   if (!res.ok) throw new Error("Growatt login failed");
 
-  return res.headers.get("set-cookie") || "";
+  // Collect ALL cookies
+  const rawCookies = res.headers.raw()["set-cookie"] || [];
+  const cookieString = rawCookies
+    .map((c) => c.split(";")[0])
+    .join("; ");
+
+  return cookieString;
 }
 
 async function setExportLimitPercent(percent) {
@@ -256,6 +262,9 @@ async function main() {
   const priceNegative = price < 0;
   const powerNegative = power < -50;
 
+  // Option A behavior:
+  // OFF → 0%
+  // ON → 100%
   let desired = "LIMIT_100";
   if (priceNegative && powerNegative) {
     desired = "LIMIT_0";
