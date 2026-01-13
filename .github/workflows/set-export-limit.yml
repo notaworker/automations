@@ -1,0 +1,40 @@
+
+name: Set Export Limit (Growatt)
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable:
+        description: "Enable (1) or disable (0) Export Limit"
+        required: true
+        default: "1"
+        type: choice
+        options: ["1", "0"]
+
+jobs:
+  toggle-export-limit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run toggle
+        env:
+          GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
+          GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
+          GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
+          GROWATT_SERVER_BASE: https://server.growatt.com
+          EXPORT_LIMIT_ENABLE: ${{ github.event.inputs.enable }}
+          # Uncomment these if auto-detect fails for your model/firmware:
+          # GROWATT_FUNC: "writeRegister"        # example placeholder
+          # GROWATT_REG_PARAM: "reg"             # example placeholder
+          # GROWATT_VAL_PARAM: "val"             # example placeholder
+        run: node set-export-limit.mjs
