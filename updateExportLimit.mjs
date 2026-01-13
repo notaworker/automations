@@ -17,12 +17,10 @@ if (!USERNAME || !PASSWORD) {
   process.exit(1);
 }
 
-async function loginToGrowatt(username, password) {
-  console.log('Step 1: Logging in to Growatt...');
-
+async function login() {
   const payload = new URLSearchParams({
-    account: username,
-    password: password,
+    account: USERNAME,
+    password: PASSWORD,
     validateCode: ''
   });
 
@@ -33,24 +31,17 @@ async function loginToGrowatt(username, password) {
     redirect: 'manual'
   });
 
-  if (!response.ok) {
-    throw new Error(`Login failed: ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`Login failed: ${response.status}`);
 
-  console.log('✓ Login successful');
-  return response;
+  return response.headers.get('set-cookie') || '';
 }
 
-async function setExportLimit(sessionResponse, deviceSN, limitValue, inverterPassword) {
-  console.log(`Step 2: Setting export limit to ${limitValue}% for device ${deviceSN}...`);
-
-  const cookie = sessionResponse.headers.get('set-cookie') || '';
-
+async function sendCommand(cookie, action, param) {
   const payload = new URLSearchParams({
-    deviceSN: deviceSN,
-    action: 'maxSet',
-    param: `plimitPer:${limitValue},plimitEnable:1,meterType:1`,
-    pwd: inverterPassword
+    deviceSN: DEVICE_SN,
+    action,
+    param,
+    pwd: INVERTER_PASSWORD
   });
 
   const response = await fetch(`${BASE_URL}${DEVICE_SETTING_ENDPOINT}`, {
@@ -64,25 +55,53 @@ async function setExportLimit(sessionResponse, deviceSN, limitValue, inverterPas
   });
 
   const text = await response.text();
+  return { ok: response.ok, text };
+}
 
-  if (!response.ok) {
-    throw new Error(`API error ${response.status}: ${text}`);
+async function tryAll(cookie, percentValue) {
+  const wattValue = Math.round((percentValue / 100) * 10000); // assume 10kW inverter
+
+  const actions = ['maxSet', 'maxSet2'];
+  const meterTypes = [1, 2];
+  const params = [
+    (v, m) => `plimitPer:${v},plimitEnable:1,meterType:${m}`,
+    (v, m) => `plimit:${Math.round((v / 100) * 10000)},plimitEnable:1,meterType:${m}`
+  ];
+
+  for (const action of actions) {
+    for (const meterType of meterTypes) {
+      for (const buildParam of params) {
+        const param = buildParam(percentValue, meterType);
+
+        console.log(`Trying: action=${action}, meterType=${meterType}, param=${param}`);
+
+        const result = await sendCommand(cookie, action, param);
+
+        if (result.ok && (result.text.includes('success') || result.text.includes('Successful'))) {
+          console.log(`✓ Success using action=${action}, meterType=${meterType}`);
+          return true;
+        }
+      }
+    }
   }
 
-  if (text.includes('success') || text.includes('Successful')) {
-    console.log(`✓ Export limit updated to ${limitValue}%`);
-  } else {
-    console.warn('⚠ Response received but unclear:', text.substring(0, 200));
-  }
+  return false;
 }
 
 async function main() {
-  console.log('=== Growatt Export Limit Updater ===\n');
+  console.log('=== Growatt Auto‑Detect Export Limit Updater ===');
 
   try {
-    const loginResponse = await loginToGrowatt(USERNAME, PASSWORD);
-    await setExportLimit(loginResponse, DEVICE_SN, EXPORT_LIMIT_VALUE, INVERTER_PASSWORD);
-    console.log('\n=== Completed successfully ===');
+    const cookie = await login();
+    const percent = Number(EXPORT_LIMIT_VALUE);
+
+    const success = await tryAll(cookie, percent);
+
+    if (success) {
+      console.log(`\n=== Export limit updated to ${percent}% ===`);
+    } else {
+      console.log('\n✗ Could not update export limit — inverter rejected all combinations');
+    }
   } catch (err) {
     console.error('\n✗ Error:', err.message);
     process.exit(1);
