@@ -1,5 +1,4 @@
 
-#!/usr/bin/env node
 // set-export-limit.mjs
 // Usage examples:
 //   EXPORT_LIMIT_ENABLE=1 node set-export-limit.mjs
@@ -26,8 +25,8 @@ const {
 } = process.env;
 
 // Export Limit “enable” register used by ShineServer Advanced Set (0=off, 1=on)
-const ENABLE_REGISTER = 202; // per Growatt Export Limitation docs (ShineServer/Advanced Set)  // 202=enable flag
-// Sources: Growatt Export Limitation Guides showing Register 202 → 1/0 on ShineServer Advanced Set
+const ENABLE_REGISTER = 202; // per Growatt Export Limitation docs (ShineServer/Advanced Set)
+// Sources (ShineServer “Advanced Set” shows Register 202 → 1/0):
 // https://bimblesolar.com/docs/growatt-export-limitation-guide.pdf
 // https://www.arsaenergy.com/growatt/wp-content/uploads/2022/09/Export-Limitation-Guide-for-S-version-inverter.pdf
 
@@ -72,11 +71,11 @@ function pick(obj, keys) {
   const inverterType = found.info.growattType;
   console.log(`✓ Found inverter ${found.sn} (type: ${inverterType}) in plant ${found.plantId}`);
 
-  // Get the map of writable functions for this inverter model
-  // (exposed by the 'growatt' lib for ShineServer)  [3](https://www.manuals.co.uk/growatt/mod-3000-10000tl3-xh/manual?p=57)
+  // Map of writable functions for this model (from 'growatt' lib)  ⟶ lets us write registers
+  // NPM package reference: https://www.npmjs.com/package/growatt
   const comm = api.getInverterCommunication(inverterType);
 
-  // Try to autodetect a function that writes a single register (commonly exposes params like "reg"/"register" + "val"/"value")
+  // Try to autodetect a function that writes a single register (looks for params like "reg"/"register" + "val"/"value")
   let funcName = GROWATT_FUNC || null;
   let regField = GROWATT_REG_PARAM || null;
   let valField = GROWATT_VAL_PARAM || null;
@@ -99,7 +98,7 @@ function pick(obj, keys) {
   if (!funcName || !regField || !valField) {
     console.error('Could not auto-detect a “write register” function for this model/firmware.');
     console.error('Tip: set overrides: GROWATT_FUNC, GROWATT_REG_PARAM, GROWATT_VAL_PARAM');
-    console.error('Or capture a single ShineServer write in DevTools (request to tcpSet.do) and map the fields.'); // 
+    console.error('Or capture a single ShineServer write in DevTools (request to tcpSet.do) and map the fields.'); // See Growatt API community docs
     await api.logout();
     process.exit(3);
   }
