@@ -8,7 +8,6 @@ on:
         description: "Portal host (e.g., https://shineserver.growatt.com or https://server.growatt.com)"
         required: false
         default: "https://shineserver.growatt.com"
-      # tcpSet.do payload fields you captured in DevTools
       param1:
         description: "param1 (required) – e.g., export limit value"
         required: true
@@ -22,11 +21,11 @@ on:
         required: false
         default: ""
       referer:
-        description: "Referer URL (recommended: exact page that fired tcpSet.do)"
+        description: "Referer URL (recommended: the exact page that fired tcpSet.do)"
         required: false
         default: ""
       adv_pwd:
-        description: "Installer/Advanced password (optional). Leave blank to rely on daily password growattYYYYMMDD"
+        description: "Installer/Advanced password (optional)"
         required: false
         default: ""
       no_auto_pwd:
@@ -47,19 +46,21 @@ jobs:
     timeout-minutes: 10
 
     env:
-      # Map your secrets to the envs the script expects
       GW_SERVER_BASE: ${{ github.event.inputs.server_base }}
+
+      # ✅ map to your secret names
       GW_USER: ${{ secrets.GROWATT_USERNAME }}
       GW_PASS: ${{ secrets.GROWATT_PASSWORD }}
-      GW_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
-      # Optional captcha if the site currently requires it
+      GW_DEVICE_SN: ${{ secrets.DEVICE_SN }}
+
+      # optional captcha if currently required
       GW_VALIDATE_CODE: ${{ secrets.GW_VALIDATE_CODE }}
 
-      # tcpSet.do required fields
+      # tcpSet.do required fields (adjust only if your capture differs)
       GW_TCPSET_ACTION: tlxSet
       GW_TCPSET_TYPE: backflow_setting
       GW_TCPSET_SN_KEY: serialNum
-      GW_TCPSET_SN_VALUE: ${{ secrets.GROWATT_DEVICE_SN }}
+      GW_TCPSET_SN_VALUE: ${{ secrets.DEVICE_SN }}
       GW_TCPSET_PARAM1: ${{ github.event.inputs.param1 }}
       GW_TCPSET_PARAM2: ${{ github.event.inputs.param2 }}
       GW_TCPSET_PARAM3: ${{ github.event.inputs.param3 }}
@@ -90,10 +91,8 @@ jobs:
       - name: 📦 Install dependencies
         run: |
           npm ci || npm install
-          # Ensure required deps exist even if not declared (fallback safety)
           npm ls axios axios-cookiejar-support tough-cookie cheerio >/dev/null 2>&1 || npm i axios axios-cookiejar-support tough-cookie cheerio
 
-      # Create safe key for filenames/artifacts (remove scheme + illegal chars)
       - name: 🧹 Sanitize host for filenames
         id: sanitize
         shell: bash
@@ -107,13 +106,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Minimal validation to fail early if secrets not present
           if [ -z "${GW_USER}" ] || [ -z "${GW_PASS}" ]; then
             echo "❌ Missing credentials. Set repo secrets GROWATT_USERNAME and GROWATT_PASSWORD."
             exit 2
           fi
           if [ -z "${GW_DEVICE_SN}" ]; then
-            echo "❌ Missing device SN. Set repo secret GROWATT_DEVICE_SN."
+            echo "❌ Missing device SN. Set repo secret DEVICE_SN."
             exit 2
           fi
           if [ -z "${GW_TCPSET_PARAM1}" ]; then
