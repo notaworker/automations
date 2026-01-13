@@ -8,7 +8,6 @@ on:
         description: "Optional: Override server base (e.g., https://shineserver.growatt.com)"
         required: false
         default: ""
-  # Optional schedule (CET 07:05 daily)
   # schedule:
   #   - cron: '5 6 * * *'
 
@@ -30,11 +29,13 @@ jobs:
           - https://shineserver.growatt.com
           - https://server.growatt.com
 
+    # Map secrets to the env your scripts expect
     env:
       GW_SERVER_BASE: ${{ github.event.inputs.server_base != '' && github.event.inputs.server_base || matrix.server_base }}
-      GW_USER: ${{ secrets.GW_USER }}
-      GW_PASS: ${{ secrets.GW_PASS }}
+      GW_USER: ${{ secrets.GROWATT_USERNAME }}
+      GW_PASS: ${{ secrets.GROWATT_PASSWORD }}
       GW_VALIDATE_CODE: ${{ secrets.GW_VALIDATE_CODE }}
+      GW_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
 
     steps:
       - name: 🧾 Checkout
@@ -42,11 +43,10 @@ jobs:
 
       - name: 🔒 Mask sensitive values
         run: |
-          echo "::add-mask::${GW_USER}"
-          echo "::add-mask::${GW_PASS}"
-          if [ -n "${GW_VALIDATE_CODE}" ]; then
-            echo "::add-mask::${GW_VALIDATE_CODE}"
-          fi
+          [ -n "${GW_USER}" ] && echo "::add-mask::${GW_USER}"
+          [ -n "${GW_PASS}" ] && echo "::add-mask::${GW_PASS}"
+          [ -n "${GW_VALIDATE_CODE}" ] && echo "::add-mask::${GW_VALIDATE_CODE}"
+          [ -n "${GW_DEVICE_SN}" ] && echo "::add-mask::${GW_DEVICE_SN}"
 
       - name: 🟢 Setup Node
         uses: actions/setup-node@v4
@@ -59,14 +59,28 @@ jobs:
           npm ci || npm install
           npm ls axios axios-cookiejar-support tough-cookie >/dev/null 2>&1 || npm i axios axios-cookiejar-support tough-cookie
 
-      - name: ▶️ Run login flow against ${{ env.GW_SERVER_BASE }}
+      # Sanitize the server base for file and artifact names
+      - name: 🧹 Sanitize server base for filenames
+        id: sanitize
+        shell: bash
+        run: |
+          # Remove scheme and replace anything not [A-Za-z0-9._-] with underscore
+          SAFE="$(echo "${GW_SERVER_BASE}" | sed -E 's~^https?://~~; s~[^A-Za-z0-9._-]~_~g')"
+          echo "safe=${SAFE}" >> "$GITHUB_OUTPUT"
+          echo "Using safe host key: ${SAFE}"
+
+      - name: 🧪 Run login flow against ${{ env.GW_SERVER_BASE }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${GW_USER}" ] || [ -z "${GW_PASS}" ]; then
+            echo "❌ GW_USER or GW_PASS is empty. Check that repository/org secrets GROWATT_USERNAME / GROWATT_PASSWORD are set and available to this workflow."
+            exit 2
+          fi
           mkdir -p logs
-          SAFE_NAME="$(echo "${GW_SERVER_BASE}" | sed 's/[^a-zA-Z0-9]/_/g')"
-          LOG_FILE="logs/login_${SAFE_NAME}.log"
+          LOG_FILE="logs/login_${{ steps.sanitize.outputs.safe }}.log"
           echo "Testing host: ${GW_SERVER_BASE}"
+          echo "Writing log to: ${LOG_FILE}"
           set +e
           node growatt-login-test.mjs | tee "${LOG_FILE}"
           CODE=${PIPESTATUS[0]}
@@ -74,10 +88,5 @@ jobs:
           echo "Exit code: $CODE"
           exit $CODE
 
-      - name: ⬆️ Upload logs (unique per host)
+      - name: ⬆️ Upload logs (unique + sanitized name)
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: growatt-login-logs-${{ github.run_id }}-${{ matrix.server_base }}
-          path: logs/
-          if-no-files-found: warn
