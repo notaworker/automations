@@ -1,19 +1,28 @@
-
 {
   "name": "automations",
   "version": "1.0.0",
-  "description": "A Node.js project using ES modules and node-fetch v3",
+  "description": "Automations using ES modules: Tibber + Growatt ShineServer",
   "type": "module",
   "main": "grow.mjs",
   "scripts": {
     "start": "node grow.mjs",
-    "tibber-alert": "node tibber-power-alert.mjs"
+    "tibber-alert": "node tibber-power-alert.mjs",
+
+    // --- Growatt / ShineServer automation ---
+    "enable-export-limit": "EXPORT_LIMIT_ENABLE=1 node set-export-limit.mjs",
+    "disable-export-limit": "EXPORT_LIMIT_ENABLE=0 node set-export-limit.mjs",
+
+    // Optional: set a custom export limit rate (placeholder until we confirm the rate register for your model)
+    "set-export-rate": "EXPORT_LIMIT_RATE=${EXPORT_LIMIT_RATE:-50} node set-export-rate.mjs"
   },
   "dependencies": {
     "node-fetch": "^3.0.0",
     "nodemailer": "^6.9.8",
     "graphql-ws": "^6.0.6",
-    "ws": "^8.17.0"
+    "ws": "^8.17.0",
+
+    // Growatt ShineServer client (Node)
+    "growatt": "^0.7.7"
   },
   "author": "",
   "license": "ISC"
