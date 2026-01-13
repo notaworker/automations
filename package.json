@@ -10,7 +10,8 @@
     "tibber-alert": "node tibber-power-alert.mjs",
     "enable-export-limit": "EXPORT_LIMIT_ENABLE=1 node set-export-limit.mjs",
     "disable-export-limit": "EXPORT_LIMIT_ENABLE=0 node set-export-limit.mjs",
-    "test:login": "node growatt-login-test.mjs"
+    "test:login": "GW_SERVER_BASE=https://shineserver.growatt.com GW_USER=$GROWATT_USERNAME GW_PASS=$GROWATT_PASSWORD node growatt-login-test.mjs",
+    "set-export-limit": "GW_DEVICE_SN=$GROWATT_DEVICE_SN GW_USER=$GROWATT_USERNAME GW_PASS=$GROWATT_PASSWORD node set-export-limit.mjs"
   },
   "dependencies": {
     "axios": "^1.7.2",
