@@ -1,12 +1,17 @@
 
 #!/usr/bin/env node
 // set-export-limit.mjs
-// Usage: EXPORT_LIMIT_ENABLE=1 node set-export-limit.mjs
-// Required env: GROWATT_USERNAME, GROWATT_PASSWORD, GROWATT_DEVICE_SN
-// Optional env: GROWATT_SERVER_BASE (default https://server.growatt.com)
-// Advanced override (only if autodetect fails): GROWATT_FUNC, GROWATT_REG_PARAM, GROWATT_VAL_PARAM
+// Usage examples:
+//   EXPORT_LIMIT_ENABLE=1 node set-export-limit.mjs
+//   EXPORT_LIMIT_ENABLE=0 node set-export-limit.mjs
+//
+// Required env (set as GitHub Secrets):
+//   GROWATT_USERNAME, GROWATT_PASSWORD, GROWATT_DEVICE_SN
+// Optional:
+//   GROWATT_SERVER_BASE (defaults to https://server.growatt.com)
+//   GROWATT_FUNC, GROWATT_REG_PARAM, GROWATT_VAL_PARAM  // override autodetect if needed
 
-import pkg from 'growatt'; // CommonJS package; default export may vary
+import pkg from 'growatt';               // CommonJS package; import compat:
 const Growatt = pkg.default || pkg;
 
 const {
@@ -15,41 +20,43 @@ const {
   GROWATT_DEVICE_SN,
   GROWATT_SERVER_BASE = 'https://server.growatt.com',
   EXPORT_LIMIT_ENABLE,
-  // Optional overrides:
   GROWATT_FUNC,
   GROWATT_REG_PARAM,
   GROWATT_VAL_PARAM
 } = process.env;
 
-// Basic validation
-if (!GROWATT_USERNAME || !GROWATT_PASSWORD || !GROWATT_DEVICE_SN) {
-  console.error('Missing required env. Set GROWATT_USERNAME, GROWATT_PASSWORD, GROWATT_DEVICE_SN');
-  process.exit(1);
-}
-if (EXPORT_LIMIT_ENABLE !== '0' && EXPORT_LIMIT_ENABLE !== '1') {
-  console.error('Set EXPORT_LIMIT_ENABLE to "1" (enable) or "0" (disable).');
-  process.exit(1);
-}
+// Export Limit “enable” register used by ShineServer Advanced Set (0=off, 1=on)
+const ENABLE_REGISTER = 202; // per Growatt Export Limitation docs (ShineServer/Advanced Set)  // 202=enable flag
+// Sources: Growatt Export Limitation Guides showing Register 202 → 1/0 on ShineServer Advanced Set
+// https://bimblesolar.com/docs/growatt-export-limitation-guide.pdf
+// https://www.arsaenergy.com/growatt/wp-content/uploads/2022/09/Export-Limitation-Guide-for-S-version-inverter.pdf
 
-const ENABLE_REGISTER = 202; // ExportLimit enable/disable (0=off, 1=on), per Growatt docs
-const enableValue = Number(EXPORT_LIMIT_ENABLE);
-
+function fail(msg, code = 1) { console.error(msg); process.exit(code); }
 function pick(obj, keys) {
-  return keys.reduce((acc, k) => (obj[k] !== undefined ? (acc[k] = obj[k], acc) : acc), {});
+  return keys.reduce((acc, k) => (obj && obj[k] !== undefined ? (acc[k] = obj[k], acc) : acc), {});
 }
 
 (async () => {
+  if (!GROWATT_USERNAME || !GROWATT_PASSWORD || !GROWATT_DEVICE_SN) {
+    fail('Missing env: set GROWATT_USERNAME, GROWATT_PASSWORD, GROWATT_DEVICE_SN');
+  }
+  if (EXPORT_LIMIT_ENABLE !== '0' && EXPORT_LIMIT_ENABLE !== '1') {
+    fail('Set EXPORT_LIMIT_ENABLE to "1" (enable) or "0" (disable).');
+  }
+  const enableValue = Number(EXPORT_LIMIT_ENABLE);
+
   const api = new Growatt({ server: GROWATT_SERVER_BASE });
 
   console.log(`→ Logging in to ${GROWATT_SERVER_BASE} as ${GROWATT_USERNAME} …`);
   await api.login(GROWATT_USERNAME, GROWATT_PASSWORD);
 
-  // Fetch devices to identify inverter type and confirm SN
+  // Discover devices so we can determine inverter type
   const all = await api.getAllPlantData({
-    plantData: false, weather: false, totalData: false, statusData: false, historyLast: false, deviceData: true
+    plantData: false, weather: false, totalData: false,
+    statusData: false, historyLast: false, deviceData: true
   });
 
-  // The response groups devices by plant; flatten to find the SN
+  // Find your inverter by serial number across all plants
   let found = null;
   for (const plantId of Object.keys(all)) {
     const devs = all[plantId]?.devices || {};
@@ -59,17 +66,17 @@ function pick(obj, keys) {
     }
   }
   if (!found) {
-    console.error(`Could not find device with SN ${GROWATT_DEVICE_SN} in your account.`);
-    process.exit(2);
+    fail(`Could not find inverter SN ${GROWATT_DEVICE_SN} in your Growatt account.`, 2);
   }
+
   const inverterType = found.info.growattType;
   console.log(`✓ Found inverter ${found.sn} (type: ${inverterType}) in plant ${found.plantId}`);
 
-  // Discover available setting functions for this model
+  // Get the map of writable functions for this inverter model
+  // (exposed by the 'growatt' lib for ShineServer)  [3](https://www.manuals.co.uk/growatt/mod-3000-10000tl3-xh/manual?p=57)
   const comm = api.getInverterCommunication(inverterType);
 
-  // Try to auto-detect a "write register" style function:
-  // we look for any "func" whose param set contains fields like "reg"/"register" and "val"/"value".
+  // Try to autodetect a function that writes a single register (commonly exposes params like "reg"/"register" + "val"/"value")
   let funcName = GROWATT_FUNC || null;
   let regField = GROWATT_REG_PARAM || null;
   let valField = GROWATT_VAL_PARAM || null;
@@ -90,34 +97,31 @@ function pick(obj, keys) {
   }
 
   if (!funcName || !regField || !valField) {
-    console.error('Could not auto-detect a “write single register” function for this inverter model.');
-    console.error('Tip: Re-run with overrides: GROWATT_FUNC, GROWATT_REG_PARAM, GROWATT_VAL_PARAM.');
-    console.error('Also consider capturing the request once in the web UI (DevTools→Network) and mapping those fields.');
+    console.error('Could not auto-detect a “write register” function for this model/firmware.');
+    console.error('Tip: set overrides: GROWATT_FUNC, GROWATT_REG_PARAM, GROWATT_VAL_PARAM');
+    console.error('Or capture a single ShineServer write in DevTools (request to tcpSet.do) and map the fields.'); // 
     await api.logout();
     process.exit(3);
   }
 
-  console.log(`→ Using func "${funcName}" with params { ${regField}, ${valField} } to write register ${ENABLE_REGISTER}=${enableValue}`);
+  console.log(`→ Writing register ${ENABLE_REGISTER}=${enableValue} using func "${funcName}" with params { ${regField}, ${valField} }`);
 
-  // Write the enable/disable flag
   const payload = { [regField]: ENABLE_REGISTER, [valField]: enableValue };
   const result = await api.setInverterSetting(inverterType, funcName, found.sn, payload);
 
-  // Many Growatt endpoints respond “success” even if the inverter is busy; the library retries internally,
-  // but we still log the raw outcome for visibility.
   console.log('Write result:', JSON.stringify(pick(result, ['success', 'msg']) || result));
 
-  // Optional: read back the same func (if supported) – not all models echo raw registers.
+  // Best-effort read back (not all firmwares echo raw registers)
   try {
-    const readBack = await api.getInverterSetting(inverterType, funcName, found.sn);
-    console.log('Read-back (best effort):', readBack);
-  } catch (e) {
-    console.log('Read-back not available for this func; this is normal on some models.');
+    const rb = await api.getInverterSetting(inverterType, funcName, found.sn);
+    console.log('Read-back (best effort):', rb);
+  } catch {
+    console.log('Read-back not available for this func on this model (normal for some firmwares).');
   }
 
   await api.logout();
   console.log(`✓ Export Limit ${enableValue ? 'ENABLED' : 'DISABLED'} (register ${ENABLE_REGISTER}=${enableValue}).`);
-})().catch(async (err) => {
+})().catch((err) => {
   console.error('❌ Error:', err?.response?.data || err?.message || err);
   process.exit(10);
 });
