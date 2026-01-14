@@ -1,3 +1,4 @@
+
 import fetch from "node-fetch";
 import nodemailer from "nodemailer";
 import { createClient } from "graphql-ws";
@@ -85,23 +86,19 @@ async function getCurrentPrice() {
 
   try {
     const res = await fetch(API_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
     const hour = new Date().getHours();
-    const entry = data.find(
-      (x) => new Date(x.time_start).getHours() === hour
-    );
-
+    const entry = data.find((x) => new Date(x.time_start).getHours() === hour);
     if (!entry) return null;
 
-    return entry.SEK_per_kWh;
-  } catch (err) {
-    console.error("Price fetch failed:", err);
-    return null;
-  }
-}
+    const value =
+      typeof entry.SEK_per_kWh === "number"
+        ? entry.SEK_per_kWh
+        : parseFloat(entry.SEK_per_kWh);
 
-// ─────────────────────────────────────────────────────────────
+   ────────────
 // TIBBER POWER FETCH
 // ─────────────────────────────────────────────────────────────
 
@@ -214,19 +211,26 @@ async function main() {
   console.log("Price:", price, "SEK/kWh");
   console.log("Power:", power, "W");
 
-  if (price < 0) {
+  const priceNegative = typeof price === "number" && price < 0;
+  const priceNonNegative = typeof price === "number" && price >= 0;
+  const powerNegative = typeof power === "number" && power < -50;
+
+  if (priceNegative) {
     await sendEmail(
       "⚠️ Negative electricity price detected",
       `The electricity price is negative.\nPrice: ${price} SEK/kWh`
     );
   }
 
-  const priceNegative = price < 0;
-  const powerNegative = power < -50;
-
+  // Decision logic
   let desired = "LIMIT_100";
   if (priceNegative && powerNegative) {
     desired = "LIMIT_0";
+  } else if (priceNonNegative) {
+    desired = "LIMIT_100";
+  } else {
+    console.warn("Price unavailable; defaulting to LIMIT_100.");
+    desired = "LIMIT_100";
   }
 
   const last = getLastState();
