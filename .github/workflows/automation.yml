@@ -3,7 +3,6 @@ name: Energy Automation
 
 on:
   schedule:
-    # Kör var 15:e minut
     - cron: "0,15,30,45 * * * *"
   workflow_dispatch: {}
 
@@ -11,25 +10,18 @@ jobs:
   run-automation:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # allow committing .growatt_state back to the repo
+      contents: write
 
     env:
-      # Email
       GMAIL_USER: ${{ secrets.GMAIL_USER }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
-
-      # Growatt – krävs av updateExportLimit.mjs
       GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
       GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
       DEVICE_SN: ${{ secrets.DEVICE_SN }}
       INVERTER_PASSWORD: ${{ secrets.INVERTER_PASSWORD }}
-
-      # Script settings
       USER_AGENT: github-actions/1.0
       TIMEOUT_MS: 15000
-
-      # Make automation.mjs read/write the repo copy of the state file
       GROWATT_STATE_PATH: ${{ github.workspace }}/.growatt_state
 
     steps:
@@ -43,7 +35,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          # ⬅️ removed cache: 'npm'
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
