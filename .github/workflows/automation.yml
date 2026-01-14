@@ -25,31 +25,28 @@ jobs:
       DEVICE_SN: ${{ secrets.DEVICE_SN }}
       INVERTER_PASSWORD: ${{ secrets.INVERTER_PASSWORD }}
 
-      # If you no longer use Tibber in your script, you can remove the next two:
-      # TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
-      # TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}
-
       # Script settings
       USER_AGENT: github-actions/1.0
       TIMEOUT_MS: 15000
 
-      # Ensure the script reads/writes the state file in the repo workspace
+      # Make automation.mjs read/write the repo copy of the state file
       GROWATT_STATE_PATH: ${{ github.workspace }}/.growatt_state
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          persist-credentials: true  # needed for git push (default true)
-          fetch-depth: 0             # get full history so commits/pushes work smoothly
+          persist-credentials: true
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Run automation script
         run: node automation.mjs
@@ -59,8 +56,6 @@ jobs:
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Only commit if .growatt_state changed
           if ! git diff --quiet -- .growatt_state; then
             echo "State changed; committing .growatt_state"
             git add .growatt_state
