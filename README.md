@@ -9,7 +9,7 @@ Version	DNAA025100
 
 Communication Version Number	ZBDB-0004
 
-Dependend of communication to 
+Dependend of communication to:
 
 https://www.elprisetjustnu.se/api/v1/prices/${year}/${month}-${day}_SE3.json (to be able to read the current 15 min price including taxes)
 
