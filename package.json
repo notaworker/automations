@@ -1,12 +1,12 @@
 {
   "name": "automations",
   "version": "1.0.0",
-  "description": "A Node.js project using ES modules and node-fetch v3",
   "type": "module",
-  "main": "grow.mjs",
   "scripts": {
-    "start": "node grow.mjs",
-    "tibber-alert": "node tibber-power-alert.mjs"
+    "automation": "node automation.mjs",
+    "send-email": "node send-email.js",
+    "update-export-limit": "node updateExportLimit.mjs",
+    "start": "node automation.mjs"
   },
   "dependencies": {
     "node-fetch": "^3.0.0",
@@ -14,6 +14,8 @@
     "graphql-ws": "^6.0.6",
     "ws": "^8.17.0"
   },
-  "author": "",
+  "engines": {
+    "node": ">=18"
+  },
   "license": "ISC"
 }
