@@ -1,7 +1,6 @@
+
 import fetch from "node-fetch";
 import nodemailer from "nodemailer";
-import { createClient } from "graphql-ws";
-import WebSocket from "ws";
 import fs from "fs";
 import { execFile } from "child_process";
 import path from "path";
@@ -14,14 +13,7 @@ const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_PASS = process.env.GMAIL_APP_PASSWORD;
 const EMAIL_RECIPIENT = process.env.EMAIL_RECIPIENT;
 
-const TIBBER_TOKEN = process.env.TIBBER_TOKEN;
-const TIBBER_HOME_ID = process.env.TIBBER_HOME_ID;
-
-const USER_AGENT =
-  process.env.USER_AGENT ||
-  "automations/1.0 (GitHub Actions) graphql-ws/6.0.6 ws/8.17.0";
-
-const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || 15000);
+const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || 15000); // kept in case you want to reuse
 
 // ─────────────────────────────────────────────────────────────
 // EMAIL TRANSPORT
@@ -63,7 +55,7 @@ function callGrowattLimit(percent) {
     };
 
     execFile("node", [scriptPath], { env }, (error, stdout, stderr) => {
-      console.log(stdout);
+      if (stdout) console.log(stdout);
       if (stderr) console.error(stderr);
       if (error) reject(error);
       else resolve();
@@ -72,7 +64,7 @@ function callGrowattLimit(percent) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PRICE FETCH
+// PRICE FETCH (SE3, elprisetjustnu.se)
 // ─────────────────────────────────────────────────────────────
 
 async function getCurrentPrice() {
@@ -85,12 +77,11 @@ async function getCurrentPrice() {
 
   try {
     const res = await fetch(API_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
     const hour = new Date().getHours();
-    const entry = data.find(
-      (x) => new Date(x.time_start).getHours() === hour
-    );
+    const entry = data.find((x) => new Date(x.time_start).getHours() === hour);
 
     if (!entry) return null;
 
@@ -99,90 +90,6 @@ async function getCurrentPrice() {
     console.error("Price fetch failed:", err);
     return null;
   }
-}
-
-// ─────────────────────────────────────────────────────────────
-// TIBBER POWER FETCH
-// ─────────────────────────────────────────────────────────────
-
-async function getTibberPower() {
-  const HTTP_GRAPHQL_ENDPOINT = "https://api.tibber.com/v1-beta/gql";
-
-  const res = await fetch(HTTP_GRAPHQL_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${TIBBER_TOKEN}`,
-      "User-Agent": USER_AGENT,
-    },
-    body: JSON.stringify({
-      query: `query { viewer { websocketSubscriptionUrl } }`,
-    }),
-  });
-
-  const json = await res.json();
-  const wsUrl = json?.data?.viewer?.websocketSubscriptionUrl;
-
-  if (!wsUrl) throw new Error("No Tibber WebSocket URL");
-
-  class HeaderWebSocket extends WebSocket {
-    constructor(url, protocols) {
-      super(url, protocols, {
-        headers: { "User-Agent": USER_AGENT },
-      });
-    }
-  }
-
-  const client = createClient({
-    url: wsUrl,
-    webSocketImpl: HeaderWebSocket,
-    connectionParams: { token: TIBBER_TOKEN },
-  });
-
-  const SUB = `
-    subscription {
-      liveMeasurement(homeId: "${TIBBER_HOME_ID}") {
-        timestamp
-        power
-      }
-    }
-  `;
-
-  return new Promise((resolve, reject) => {
-    let settled = false;
-
-    const timer = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        client.dispose();
-        reject(new Error("Tibber timeout"));
-      }
-    }, TIMEOUT_MS);
-
-    client.subscribe(
-      { query: SUB },
-      {
-        next: (payload) => {
-          if (settled) return;
-          const m = payload?.data?.liveMeasurement;
-          if (m && typeof m.power === "number") {
-            settled = true;
-            clearTimeout(timer);
-            client.dispose();
-            resolve(m.power);
-          }
-        },
-        error: (err) => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timer);
-            client.dispose();
-            reject(err);
-          }
-        },
-      }
-    );
-  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -206,28 +113,32 @@ function saveState(state) {
 // ─────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log("Fetching price and power...");
-
+  console.log("Fetching price...");
   const price = await getCurrentPrice();
-  const power = await getTibberPower();
+
+  if (price === null || typeof price !== "number" || Number.isNaN(price)) {
+    console.error("No valid price available right now. Exiting without change.");
+    await sendEmail(
+      "⚠️ Price unavailable — no change made",
+      "The script could not obtain a valid electricity price and did not change the export limit."
+    ).catch(() => {});
+    return;
+  }
 
   console.log("Price:", price, "SEK/kWh");
-  console.log("Power:", power, "W");
 
+  // Notify separately if price is negative (optional but kept from your original script)
   if (price < 0) {
     await sendEmail(
       "⚠️ Negative electricity price detected",
       `The electricity price is negative.\nPrice: ${price} SEK/kWh`
-    );
+    ).catch(() => {});
   }
 
-  const priceNegative = price < 0;
-  const powerNegative = power < -50;
-
-  let desired = "LIMIT_100";
-  if (priceNegative && powerNegative) {
-    desired = "LIMIT_0";
-  }
+  // Desired behavior:
+  // - LIMIT_0  when price < 0
+  // - LIMIT_100 when price >= 0 (i.e., positive or zero)
+  const desired = price < 0 ? "LIMIT_0" : "LIMIT_100";
 
   const last = getLastState();
   console.log("Last state:", last);
@@ -248,10 +159,8 @@ async function main() {
 
   await sendEmail(
     `Growatt export limit changed → ${desired}`,
-    `Price: ${price} SEK/kWh\nPower: ${power} W\nNew export limit: ${
-      desired === "LIMIT_0" ? "0%" : "100%"
-    }`
-  );
+    `Price: ${price} SEK/kWh\nNew export limit: ${desired === "LIMIT_0" ? "0%" : "100%"}`
+  ).catch(() => {});
 }
 
 main().catch((err) => console.error("Fatal:", err));
