@@ -1,3 +1,4 @@
+
 name: Energy Automation
 
 on:
@@ -10,7 +11,7 @@ jobs:
   run-automation:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # allow committing .growatt_state back to the repo
 
     env:
       # Email
@@ -24,17 +25,23 @@ jobs:
       DEVICE_SN: ${{ secrets.DEVICE_SN }}
       INVERTER_PASSWORD: ${{ secrets.INVERTER_PASSWORD }}
 
-      # Tibber
-      TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
-      TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}
+      # If you no longer use Tibber in your script, you can remove the next two:
+      # TIBBER_TOKEN: ${{ secrets.TIBBER_TOKEN }}
+      # TIBBER_HOME_ID: ${{ secrets.TIBBER_HOME_ID }}
 
       # Script settings
       USER_AGENT: github-actions/1.0
       TIMEOUT_MS: 15000
 
+      # Ensure the script reads/writes the state file in the repo workspace
+      GROWATT_STATE_PATH: ${{ github.workspace }}/.growatt_state
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true  # needed for git push (default true)
+          fetch-depth: 0             # get full history so commits/pushes work smoothly
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -42,7 +49,23 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run automation script
         run: node automation.mjs
+
+      - name: Commit state if changed
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Only commit if .growatt_state changed
+          if ! git diff --quiet -- .growatt_state; then
+            echo "State changed; committing .growatt_state"
+            git add .growatt_state
+            git commit -m "chore: update .growatt_state via automation [skip ci]"
+            git push
+          else
+            echo "No state changes to commit."
+          fi
