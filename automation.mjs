@@ -4,6 +4,18 @@ import nodemailer from "nodemailer";
 import fs from "fs";
 import { execFile } from "child_process";
 import path from "path";
+import { fileURLToPath } from "url";
+
+// ─────────────────────────────────────────────────────────────
+// PATH HELPERS (ESM-safe __dirname)
+// ─────────────────────────────────────────────────────────────
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// State file path: default next to this script, override via env
+const STATE_PATH = process.env.GROWATT_STATE_PATH
+  ? path.resolve(process.env.GROWATT_STATE_PATH)
+  : path.join(__dirname, ".growatt_state");
 
 // ─────────────────────────────────────────────────────────────
 // ENVIRONMENT VARIABLES
@@ -13,7 +25,7 @@ const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_PASS = process.env.GMAIL_APP_PASSWORD;
 const EMAIL_RECIPIENT = process.env.EMAIL_RECIPIENT;
 
-const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || 15000); // kept in case you want to reuse
+const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || 15000); // kept for future reuse
 
 // ─────────────────────────────────────────────────────────────
 // EMAIL TRANSPORT
@@ -68,10 +80,10 @@ function callGrowattLimit(percent) {
 // ─────────────────────────────────────────────────────────────
 
 async function getCurrentPrice() {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
 
   const API_URL = `https://www.elprisetjustnu.se/api/v1/prices/${year}/${month}-${day}_SE3.json`;
 
@@ -93,19 +105,39 @@ async function getCurrentPrice() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// STATE MEMORY
+// STATE MEMORY (robust, absolute path, atomic write)
 // ─────────────────────────────────────────────────────────────
+
+function ensureDirFor(filePath) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
 
 function getLastState() {
   try {
-    return fs.readFileSync(".growatt_state", "utf8").trim();
+    const content = fs.readFileSync(STATE_PATH, "utf8").trim();
+    return content || "LIMIT_100";
   } catch {
+    // File missing on first run
     return "LIMIT_100";
   }
 }
 
-function saveState(state) {
-  fs.writeFileSync(".growatt_state", state);
+function saveStateAtomic(state) {
+  ensureDirFor(STATE_PATH);
+  const tmpPath = `${STATE_PATH}.tmp`;
+
+  // Write to temp, fsync, then rename for atomicity
+  const fd = fs.openSync(tmpPath, "w");
+  try {
+    fs.writeFileSync(fd, state, { encoding: "utf8" });
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmpPath, STATE_PATH);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -113,35 +145,39 @@ function saveState(state) {
 // ─────────────────────────────────────────────────────────────
 
 async function main() {
+  console.log("State file path:", STATE_PATH);
   console.log("Fetching price...");
+
   const price = await getCurrentPrice();
 
   if (price === null || typeof price !== "number" || Number.isNaN(price)) {
     console.error("No valid price available right now. Exiting without change.");
-    await sendEmail(
-      "⚠️ Price unavailable — no change made",
-      "The script could not obtain a valid electricity price and did not change the export limit."
-    ).catch(() => {});
+    try {
+      await sendEmail(
+        "⚠️ Price unavailable — no change made",
+        "The script could not obtain a valid electricity price and did not change the export limit."
+      );
+    } catch {}
     return;
   }
 
   console.log("Price:", price, "SEK/kWh");
 
-  // Notify separately if price is negative (optional but kept from your original script)
   if (price < 0) {
-    await sendEmail(
-      "⚠️ Negative electricity price detected",
-      `The electricity price is negative.\nPrice: ${price} SEK/kWh`
-    ).catch(() => {});
+    try {
+      await sendEmail(
+        "⚠️ Negative electricity price detected",
+        `The electricity price is negative.\nPrice: ${price} SEK/kWh`
+      );
+    } catch {}
   }
 
-  // Desired behavior:
-  // - LIMIT_0  when price < 0
-  // - LIMIT_100 when price >= 0 (i.e., positive or zero)
+  // Decision purely on price:
+  // price < 0 -> LIMIT_0 ; price >= 0 -> LIMIT_100
   const desired = price < 0 ? "LIMIT_0" : "LIMIT_100";
 
   const last = getLastState();
-  console.log("Last state:", last);
+  console.log("Last state (read from file):", last);
   console.log("Desired state:", desired);
 
   if (desired === last) {
@@ -155,12 +191,28 @@ async function main() {
     await callGrowattLimit(100);
   }
 
-  saveState(desired);
+  try {
+    saveStateAtomic(desired);
+    // Re-read to verify
+    const verify = getLastState();
+    console.log("State saved. Verified state on disk:", verify);
+    if (verify !== desired) {
+      console.warn(
+        `Warning: state verification mismatch (expected ${desired}, got ${verify}).`
+      );
+    }
+  } catch (err) {
+    console.error("Failed to save state file:", err);
+  }
 
-  await sendEmail(
-    `Growatt export limit changed → ${desired}`,
-    `Price: ${price} SEK/kWh\nNew export limit: ${desired === "LIMIT_0" ? "0%" : "100%"}`
-  ).catch(() => {});
+  try {
+    await sendEmail(
+      `Growatt export limit changed → ${desired}`,
+      `Price: ${price} SEK/kWh\nNew export limit: ${
+        desired === "LIMIT_0" ? "0%" : "100%"
+      }`
+    );
+  } catch {}
 }
 
 main().catch((err) => console.error("Fatal:", err));
