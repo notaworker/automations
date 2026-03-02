@@ -1,5 +1,1 @@
-{
-  "scripts": {
-    "check-growatt": "your-check-script-command"
-  }
-}
+{"name": "automations", "version": "1.0.0", "type": "module", "scripts": {"automation": "<existing-script>", "send-email": "<existing-script>", "update-export-limit": "<existing-script>", "start": "<existing-script>", "check-growatt": "node checkGrowattPower.mjs"}, "dependencies": {<existing-dependencies>}}
