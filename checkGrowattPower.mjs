@@ -74,19 +74,18 @@ async function getGrowattData() {
 
     await growatt.logout();
 
-    // Debug: print full raw plant data so we can find correct field names
-    console.log("\n🔍 Full raw plantData:\n" + JSON.stringify(plantData, null, 2));
-
     // Search all plants for our device SN
     for (const plant of Object.values(plantData)) {
       for (const [sn, device] of Object.entries(plant.devices || {})) {
         if (sn === GROWATT_DEVICE_ID || device.deviceSn === GROWATT_DEVICE_ID) {
+          const d = device.deviceData || {};
+          const s = device.statusData || {};
           return {
-            currentPower: device.pac ?? device.ppv ?? 0,
-            dailyEnergy: device.eToday ?? device.etoday ?? 0,
-            totalEnergy: device.eTotal ?? device.etotal ?? 0,
-            status: device.status ?? "unknown",
-            statusText: getGrowattStatusText(device.status),
+            currentPower: parseFloat(d.pac ?? s.ppv ?? 0),
+            dailyEnergy: parseFloat(d.eToday ?? 0),
+            totalEnergy: parseFloat(d.eTotal ?? 0),
+            status: d.status ?? "unknown",
+            statusText: getGrowattStatusText(d.status),
           };
         }
       }
@@ -97,12 +96,14 @@ async function getGrowattData() {
     for (const plant of Object.values(plantData)) {
       const firstDevice = Object.values(plant.devices || {})[0];
       if (firstDevice) {
+        const d = firstDevice.deviceData || {};
+        const s = firstDevice.statusData || {};
         return {
-          currentPower: firstDevice.pac ?? firstDevice.ppv ?? 0,
-          dailyEnergy: firstDevice.eToday ?? firstDevice.etoday ?? 0,
-          totalEnergy: firstDevice.eTotal ?? firstDevice.etotal ?? 0,
-          status: firstDevice.status ?? "unknown",
-          statusText: getGrowattStatusText(firstDevice.status),
+          currentPower: parseFloat(d.pac ?? s.ppv ?? 0),
+          dailyEnergy: parseFloat(d.eToday ?? 0),
+          totalEnergy: parseFloat(d.eTotal ?? 0),
+          status: d.status ?? "unknown",
+          statusText: getGrowattStatusText(d.status),
         };
       }
     }
