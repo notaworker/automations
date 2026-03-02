@@ -41,6 +41,22 @@ async function sendEmail(subject, text) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// SOLAR ELEVATION (Sigtuna 59.62°N)
+// ─────────────────────────────────────────────────────────────
+function getSolarElevation() {
+  const now = new Date();
+  const hour = now.getHours() + now.getMinutes() / 60;
+  const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+  const declination = 23.45 * Math.sin((Math.PI / 180) * (360 / 365 * (dayOfYear - 81)));
+  const hourAngleDeg = 15 * (hour - 12);
+  const latR = 59.62 * Math.PI / 180;
+  const decR = declination * Math.PI / 180;
+  const haR = hourAngleDeg * Math.PI / 180;
+  const sinElev = Math.sin(latR) * Math.sin(decR) + Math.cos(latR) * Math.cos(decR) * Math.cos(haR);
+  return Math.asin(Math.max(-1, Math.min(1, sinElev))) * 180 / Math.PI;
+}
+
+// ─────────────────────────────────────────────────────────────
 // GROWATT API
 // ─────────────────────────────────────────────────────────────
 async function getGrowattData() {
@@ -197,6 +213,14 @@ async function checkSolarPower() {
   console.log(`Timestamp: ${new Date().toISOString()}`);
   console.log("═══════════════════════════════════════════════════════════\n");
 
+  // Check if sun is actually above the horizon in Sigtuna before doing anything
+  const solarElevation = getSolarElevation();
+  console.log(`   Solar Elevation: ${solarElevation.toFixed(1)}°`);
+  if (solarElevation <= 3) {
+    console.log("\n🌙 Sun is not up in Sigtuna - skipping power check");
+    return;
+  }
+
   const [growattData, weatherData] = await Promise.all([getGrowattData(), getWeatherData()]);
 
   if (!growattData) { console.error("❌ Failed to get Growatt data"); return; }
@@ -215,9 +239,6 @@ async function checkSolarPower() {
     console.log(`   Condition:   ${getWeatherDescription(weatherData.weatherCode)}`);
     console.log(`   Is Sunny:    ${weatherData.isSunny ? "YES ☀️" : "NO ☁️"}`);
   }
-
-  const hour = new Date().getHours();
-  if (hour < 6 || hour > 20) { console.log("\n🌙 It's nighttime - skipping power check"); return; }
 
   if (weatherData && weatherData.isSunny) {
     const expectedPower = calculateExpectedPower(weatherData);
