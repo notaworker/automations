@@ -168,20 +168,66 @@ function getWeatherDescription(weatherCode) {
 // POWER ANALYSIS
 // ─────────────────────────────────────────────────────────────
 function calculateExpectedPower(weather) {
-  const hour = new Date().getHours();
-  const month = new Date().getMonth() + 1;
+  // Physics-based model for Sigtuna, Sweden (59.62°N)
+  // SE array: 24 x 400W (azimuth 134°), NW array: 12 x 400W (azimuth 335°)
+  // Inverter cap: 10,000W, system efficiency: ~80%
 
-  let basePower = 0;
-  if (hour >= 6 && hour < 9)        basePower = 1000;
-  else if (hour >= 9 && hour < 12)  basePower = 3000;
-  else if (hour >= 12 && hour < 15) basePower = 4000;
-  else if (hour >= 15 && hour < 18) basePower = 2000;
-  else if (hour >= 18 && hour < 21) basePower = 500;
+  const now = new Date();
+  const hour = now.getHours() + now.getMinutes() / 60;
+  const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
 
-  const seasonalFactor = month >= 6 && month <= 8 ? 1.2 : 0.8;
-  const cloudFactor = Math.max(0, 1 - weather.cloudCover / 100);
+  const LAT = 59.62;
+  const SE_AZ = 134;
+  const NW_AZ = 335;
+  const SE_CAP = 9600;   // 24 x 400W
+  const NW_CAP = 4800;   // 12 x 400W
+  const INVERTER_CAP = 10000;
+  const EFFICIENCY = 0.80;
+  const PANEL_TILT = 30; // degrees
 
-  return Math.round(basePower * seasonalFactor * cloudFactor);
+  // Solar declination
+  const declination = 23.45 * Math.sin((Math.PI / 180) * (360 / 365 * (dayOfYear - 81)));
+
+  // Hour angle (15° per hour from solar noon)
+  const hourAngleDeg = 15 * (hour - 12);
+
+  // Solar elevation
+  const latR = LAT * Math.PI / 180;
+  const decR = declination * Math.PI / 180;
+  const haR = hourAngleDeg * Math.PI / 180;
+  const sinElev = Math.sin(latR) * Math.sin(decR) + Math.cos(latR) * Math.cos(decR) * Math.cos(haR);
+  const elevation = Math.asin(Math.max(-1, Math.min(1, sinElev))) * 180 / Math.PI;
+
+  if (elevation <= 0) return 0;
+
+  // Solar azimuth
+  const cosAz = (Math.sin(decR) - Math.sin(latR) * sinElev) / (Math.cos(latR) * Math.cos(elevation * Math.PI / 180));
+  let azimuth = Math.acos(Math.max(-1, Math.min(1, cosAz))) * 180 / Math.PI;
+  if (hourAngleDeg > 0) azimuth = 360 - azimuth;
+
+  // DNI (clear sky direct normal irradiance)
+  const airMass = 1 / Math.sin(Math.max(5, elevation) * Math.PI / 180);
+  const dni = 1000 * Math.pow(0.7, Math.pow(airMass, 0.678));
+
+  // Panel incidence factor for each array
+  function panelFactor(sunAz, sunEl, panelAz) {
+    const sunAzR = sunAz * Math.PI / 180;
+    const sunElR = sunEl * Math.PI / 180;
+    const panAzR = panelAz * Math.PI / 180;
+    const tiltR = PANEL_TILT * Math.PI / 180;
+    const factor = Math.cos(sunElR) * Math.cos(tiltR) +
+                   Math.sin(sunElR) * Math.sin(tiltR) * Math.cos(sunAzR - panAzR);
+    return Math.max(0, factor);
+  }
+
+  const sePower = SE_CAP * panelFactor(azimuth, elevation, SE_AZ) * (dni / 1000) * EFFICIENCY;
+  const nwPower = NW_CAP * panelFactor(azimuth, elevation, NW_AZ) * (dni / 1000) * EFFICIENCY;
+  const clearSkyPower = Math.min(sePower + nwPower, INVERTER_CAP);
+
+  // Adjust for cloud cover (clouds reduce both direct and diffuse)
+  const cloudFactor = Math.max(0, 1 - (weather.cloudCover / 100) * 0.85);
+
+  return Math.round(clearSkyPower * cloudFactor);
 }
 
 // ─────────────────────────────────────────────────────────────
