@@ -1,4 +1,6 @@
 name: Check Growatt Solar Power
+permissions:
+  contents: read
 on:
   schedule:
     - cron: '0 6-21 * * *'  # Every hour from 6 AM to 9 PM
