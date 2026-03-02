@@ -1,10 +1,8 @@
 name: Check Growatt Solar Power
-
 on:
   schedule:
     - cron: '0 6-21 * * *'  # Every hour from 6 AM to 9 PM
   workflow_dispatch:
-
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -13,18 +11,19 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 18
-      
+          cache: 'npm'
+
       - name: Install dependencies
         run: npm install
-      
+
       - name: Check Growatt Solar Power
         run: npm run check-growatt
-env:
-  GMAIL_USER: ${{ secrets.GMAIL_USER }}
-  GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-  EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
-  GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
-  GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
-  DEVICE_SN: ${{ secrets.DEVICE_SN }}      # ← fixed name on both sides
-  LATITUDE: ${{ secrets.LATITUDE }}
-  LONGITUDE: ${{ secrets.LONGITUDE }}
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
+          GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
+          DEVICE_SN: ${{ secrets.DEVICE_SN }}
+          LATITUDE: ${{ secrets.LATITUDE }}
+          LONGITUDE: ${{ secrets.LONGITUDE }}
