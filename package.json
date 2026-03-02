@@ -1,1 +1,22 @@
-{"name": "automations", "version": "1.0.0", "type": "module", "scripts": {"automation": "<existing-script>", "send-email": "<existing-script>", "update-export-limit": "<existing-script>", "start": "<existing-script>", "check-growatt": "node checkGrowattPower.mjs"}, "dependencies": {<existing-dependencies>}}
+{
+  "name": "automations",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "automation": "node automation.mjs",
+    "send-email": "node send-email.js",
+	"check-growatt": "your-check-script-command",
+    "update-export-limit": "node updateExportLimit.mjs",
+    "start": "node automation.mjs"
+  },
+  "dependencies": {
+    "node-fetch": "^3.0.0",
+    "nodemailer": ">=7.0.11",
+    "graphql-ws": "^6.0.6",
+    "ws": "^8.17.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "ISC"
+}
