@@ -5,7 +5,7 @@
   "scripts": {
     "automation": "node automation.mjs",
     "send-email": "node send-email.js",
-	"check-growatt": "your-check-script-command",
+	"check-growatt": "node checkGrowattPower.mjs",
     "update-export-limit": "node updateExportLimit.mjs",
     "start": "node automation.mjs"
   },
