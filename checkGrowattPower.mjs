@@ -74,6 +74,9 @@ async function getGrowattData() {
 
     await growatt.logout();
 
+    // Debug: print full raw plant data so we can find correct field names
+    console.log("\n🔍 Full raw plantData:\n" + JSON.stringify(plantData, null, 2));
+
     // Search all plants for our device SN
     for (const plant of Object.values(plantData)) {
       for (const [sn, device] of Object.entries(plant.devices || {})) {
