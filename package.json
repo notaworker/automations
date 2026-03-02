@@ -5,11 +5,12 @@
   "scripts": {
     "automation": "node automation.mjs",
     "send-email": "node send-email.js",
-	"check-growatt": "node checkGrowattPower.mjs",
+    "check-growatt": "node checkGrowattPower.mjs",
     "update-export-limit": "node updateExportLimit.mjs",
     "start": "node automation.mjs"
   },
   "dependencies": {
+    "growatt": "^2.0.0",
     "node-fetch": "^3.0.0",
     "nodemailer": ">=7.0.11",
     "graphql-ws": "^6.0.6",
