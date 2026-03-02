@@ -20,11 +20,11 @@ jobs:
       - name: Check Growatt Solar Power
         run: npm run check-growatt
         env:
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
-          GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
-          GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
-          DEVICE_ID: ${{ secrets.DEVICE_ID }}
-          LATITUDE: ${{ secrets.LATITUDE }}
-          LONGITUDE: ${{ secrets.LONGITUDE }}
+    GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
+    GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
+    DEVICE_SN: ${{ secrets.DEVICE_SN }}
+    GMAIL_USER: ${{ secrets.GMAIL_USER }}
+    GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+    EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+    LATITUDE: ${{ secrets.LATITUDE }}
+    LONGITUDE: ${{ secrets.LONGITUDE }}
