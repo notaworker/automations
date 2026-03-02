@@ -25,6 +25,6 @@ jobs:
           EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
           GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
           GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
-          DEVICE_ID: ${{ secrets.GROWATT_DEVICE_ID }}
+          DEVICE_ID: ${{ secrets.DEVICE_ID }}
           LATITUDE: ${{ secrets.LATITUDE }}
           LONGITUDE: ${{ secrets.LONGITUDE }}
