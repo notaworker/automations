@@ -22,7 +22,7 @@ const LONGITUDE = process.env.LONGITUDE;
 const _BASE_THRESHOLD = Number(process.env.POWER_THRESHOLD_PERCENT || 70);
 const _month = new Date().getMonth() + 1;
 const POWER_THRESHOLD_PERCENT = (_month >= 10 || _month <= 4) ? 50 : _BASE_THRESHOLD;
-const SUNNY_THRESHOLD = Number(process.env.SUNNY_THRESHOLD || 20);
+const SUNNY_THRESHOLD = Number(process.env.SUNNY_THRESHOLD || 50);
 
 // ─────────────────────────────────────────────────────────────
 // EMAIL
