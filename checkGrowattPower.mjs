@@ -21,8 +21,8 @@ const LONGITUDE = process.env.LONGITUDE;
 // Threshold: 50% Oct–Apr (winter), 70% May–Sep (summer)
 const _BASE_THRESHOLD = Number(process.env.POWER_THRESHOLD_PERCENT || 70);
 const _month = new Date().getMonth() + 1;
-const POWER_THRESHOLD_PERCENT = (_month >= 10 || _month <= 4) ? 50 : _BASE_THRESHOLD;
-const SUNNY_THRESHOLD = Number(process.env.SUNNY_THRESHOLD || 30);
+const POWER_THRESHOLD_PERCENT = (_month >= 10 || _month <= 4) ? 40 : _BASE_THRESHOLD;
+const SUNNY_THRESHOLD = Number(process.env.SUNNY_THRESHOLD || 20);
 
 // ─────────────────────────────────────────────────────────────
 // EMAIL
