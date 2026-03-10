@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   schedule:
-    - cron: '0 7-16 * * *'  # Every hour from 6 AM to 9 PM
+    - cron: '0 8-16 * * *'  # Every hour from 6 AM to 9 PM
   workflow_dispatch:
 jobs:
   check:
