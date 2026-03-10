@@ -18,11 +18,10 @@ const GROWATT_DEVICE_ID = process.env.DEVICE_SN;
 const LATITUDE = process.env.LATITUDE;
 const LONGITUDE = process.env.LONGITUDE;
 
-// Threshold: 50% Oct–Apr (winter), 70% May–Sep (summer)
+// Threshold: 40% Oct–Apr (winter), 70% May–Sep (summer)
 const _BASE_THRESHOLD = Number(process.env.POWER_THRESHOLD_PERCENT || 70);
 const _month = new Date().getMonth() + 1;
 const POWER_THRESHOLD_PERCENT = (_month >= 10 || _month <= 4) ? 40 : _BASE_THRESHOLD;
-const SUNNY_THRESHOLD = Number(process.env.SUNNY_THRESHOLD || 20);
 
 // ─────────────────────────────────────────────────────────────
 // EMAIL
@@ -132,7 +131,6 @@ async function getWeatherData() {
       cloudCover: data.current.cloud_cover,
       weatherCode: data.current.weather_code,
       isDay: data.current.is_day,
-      isSunny: data.current.cloud_cover < SUNNY_THRESHOLD,
     };
   } catch (err) { console.error("Error fetching weather data:", err.message); return null; }
 }
@@ -237,26 +235,27 @@ async function checkSolarPower() {
     console.log(`   Temperature: ${weatherData.temperature}°C`);
     console.log(`   Cloud Cover: ${weatherData.cloudCover}%`);
     console.log(`   Condition:   ${getWeatherDescription(weatherData.weatherCode)}`);
-    console.log(`   Is Sunny:    ${weatherData.isSunny ? "YES ☀️" : "NO ☁️"}`);
   }
 
-  if (weatherData && weatherData.isSunny) {
+  // Always run power analysis when sun is up — cloudFactor in calculateExpectedPower
+  // already scales expected output for cloud cover, so no need to gate on isSunny.
+  if (weatherData) {
     const expectedPower = calculateExpectedPower(weatherData);
-    const powerRatio = (growattData.currentPower / expectedPower) * 100;
+    const powerRatio = expectedPower > 0 ? (growattData.currentPower / expectedPower) * 100 : 0;
 
     console.log(`\n⚡ Power Analysis:`);
     console.log(`   Expected Power: ~${expectedPower}W`);
     console.log(`   Current Power:  ${growattData.currentPower}W`);
     console.log(`   Efficiency:     ${powerRatio.toFixed(1)}%`);
 
-    if (powerRatio < POWER_THRESHOLD_PERCENT) {
+    if (expectedPower > 0 && powerRatio < POWER_THRESHOLD_PERCENT) {
       console.log(`\n⚠️  ALERT: Power output is only ${powerRatio.toFixed(1)}% of expected!`);
       await sendEmail(
         "🚨 Growatt Solar Panel Alert - Low Power Output",
         `
 🚨 GROWATT SOLAR PANEL ALERT 🚨
 
-Your solar panels are not producing enough power on a sunny day.
+Your solar panels are not producing enough power.
 
 📊 Details:
    Timestamp:      ${new Date().toISOString()}
@@ -285,8 +284,9 @@ Recommendation: Check your installation and panels for any issues.
     } else {
       console.log(`\n✅ Power output is healthy (${powerRatio.toFixed(1)}% of expected)`);
     }
-  } else if (weatherData) {
-    console.log("\n☁️  Cloud cover is too high - power check skipped (not sunny)");
+  } else {
+    // No weather data — still do a basic sanity check using raw output only
+    console.log("\n⚠️  No weather data available — skipping expected power comparison");
   }
 
   console.log("\n═══════════════════════════════════════════════════════════\n");
