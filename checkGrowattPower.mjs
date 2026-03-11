@@ -18,10 +18,10 @@ const GROWATT_DEVICE_ID = process.env.DEVICE_SN;
 const LATITUDE = process.env.LATITUDE;
 const LONGITUDE = process.env.LONGITUDE;
 
-// Threshold: 40% Oct–Apr (winter), 70% May–Sep (summer)
+// Threshold: 30% Oct–Apr (winter), 70% May–Sep (summer)
 const _BASE_THRESHOLD = Number(process.env.POWER_THRESHOLD_PERCENT || 70);
 const _month = new Date().getMonth() + 1;
-const POWER_THRESHOLD_PERCENT = (_month >= 10 || _month <= 4) ? 40 : _BASE_THRESHOLD;
+const POWER_THRESHOLD_PERCENT = (_month >= 10 || _month <= 4) ? 30 : _BASE_THRESHOLD;
 
 // ─────────────────────────────────────────────────────────────
 // EMAIL
