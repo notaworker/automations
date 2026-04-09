@@ -1,4 +1,3 @@
-
 import fetch from "node-fetch";
 import nodemailer from "nodemailer";
 import fs from "fs";
@@ -16,6 +15,11 @@ const __dirname = path.dirname(__filename);
 const STATE_PATH = process.env.GROWATT_STATE_PATH
   ? path.resolve(process.env.GROWATT_STATE_PATH)
   : path.join(__dirname, ".growatt_state");
+
+// Tracks whether a negative-price alert has already been sent for the current slot
+const ALERT_STATE_PATH = process.env.GROWATT_ALERT_STATE_PATH
+  ? path.resolve(process.env.GROWATT_ALERT_STATE_PATH)
+  : path.join(__dirname, ".growatt_alert_state");
 
 // ─────────────────────────────────────────────────────────────
 // ENVIRONMENT VARIABLES
@@ -77,31 +81,60 @@ function callGrowattLimit(percent) {
 
 // ─────────────────────────────────────────────────────────────
 // PRICE FETCH (SE3, elprisetjustnu.se)
+// The API returns 15-minute price slots. We fetch today's data
+// and also tomorrow's if we need lookahead slots past midnight.
 // ─────────────────────────────────────────────────────────────
 
-async function getCurrentPrice() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-
+async function fetchPricesForDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   const API_URL = `https://www.elprisetjustnu.se/api/v1/prices/${year}/${month}-${day}_SE3.json`;
 
   try {
     const res = await fetch(API_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-
-    const hour = new Date().getHours();
-    const entry = data.find((x) => new Date(x.time_start).getHours() === hour);
-
-    if (!entry) return null;
-
-    return entry.SEK_per_kWh;
+    return await res.json();
   } catch (err) {
-    console.error("Price fetch failed:", err);
-    return null;
+    console.error(`Price fetch failed for ${year}-${month}-${day}:`, err);
+    return [];
   }
+}
+
+async function getPriceData() {
+  const now = new Date();
+  const today = await fetchPricesForDate(now);
+
+  // Also fetch tomorrow in case we need lookahead slots past midnight
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowData = await fetchPricesForDate(tomorrow);
+
+  // Merge and sort all slots chronologically
+  const all = [...today, ...tomorrowData].sort(
+    (a, b) => new Date(a.time_start) - new Date(b.time_start)
+  );
+
+  return all.length > 0 ? all : null;
+}
+
+// Returns the current slot and the next 3 slots (4 total = 1 hour)
+function getCurrentAndLookaheadSlots(data) {
+  const now = new Date();
+
+  // Find the slot whose window contains the current time
+  const currentIndex = data.findIndex((slot, i) => {
+    const start = new Date(slot.time_start);
+    const end = data[i + 1]
+      ? new Date(data[i + 1].time_start)
+      : new Date(start.getTime() + 15 * 60 * 1000);
+    return now >= start && now < end;
+  });
+
+  if (currentIndex === -1) return null;
+
+  // Grab current + next 3 slots (4 x 15 min = 1 hour)
+  return data.slice(currentIndex, currentIndex + 4);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -141,40 +174,129 @@ function saveStateAtomic(state) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// ALERT STATE — tracks which slot key we last sent a negative
+// price alert for, so we don't re-send every 15 minutes.
+// Key format: "YYYY-MM-DDTHH:MM" (slot start, minute precision)
+// ─────────────────────────────────────────────────────────────
+
+function getLastAlertSlot() {
+  try {
+    return fs.readFileSync(ALERT_STATE_PATH, "utf8").trim() || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveAlertSlot(slotKey) {
+  ensureDirFor(ALERT_STATE_PATH);
+  const tmpPath = `${ALERT_STATE_PATH}.tmp`;
+  const fd = fs.openSync(tmpPath, "w");
+  try {
+    fs.writeFileSync(fd, slotKey, { encoding: "utf8" });
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmpPath, ALERT_STATE_PATH);
+}
+
+// ─────────────────────────────────────────────────────────────
+// DESIRED STATE LOGIC
+//
+// Only restrict export when ALL 4 consecutive 15-minute slots
+// (current + next 3) are ≤ -0.20 SEK/kWh. This ensures the
+// price is deeply negative for a full hour before we act.
+//
+//   all 4 slots ≤ -0.20 SEK/kWh  →  LIMIT_5  (5%)
+//   anything else                 →  LIMIT_100 (100%)
+// ─────────────────────────────────────────────────────────────
+
+function determineDesiredState(slots) {
+  if (!slots || slots.length < 4) return "LIMIT_100";
+
+  const allDeepNegative = slots.every((s) => s.SEK_per_kWh <= -0.20);
+  return allDeepNegative ? "LIMIT_5" : "LIMIT_100";
+}
+
+// ─────────────────────────────────────────────────────────────
 // MAIN LOGIC
 // ─────────────────────────────────────────────────────────────
 
 async function main() {
   console.log("State file path:", STATE_PATH);
-  console.log("Fetching price...");
+  console.log("Fetching prices...");
 
-  const price = await getCurrentPrice();
+  const data = await getPriceData();
 
-  if (price === null || typeof price !== "number" || Number.isNaN(price)) {
-    console.error("No valid price available right now. Exiting without change.");
+  if (!data) {
+    console.error("No price data available. Exiting without change.");
     try {
       await sendEmail(
         "⚠️ Price unavailable — no change made",
-        "The script could not obtain a valid electricity price and did not change the export limit."
+        "The script could not obtain valid electricity prices and did not change the export limit."
       );
     } catch {}
     return;
   }
 
-  console.log("Price:", price, "SEK/kWh");
+  const slots = getCurrentAndLookaheadSlots(data);
 
-  if (price < 0) {
+  if (!slots || slots.length === 0) {
+    console.error("Could not find current price slot. Exiting without change.");
     try {
       await sendEmail(
-        "⚠️ Negative electricity price detected",
-        `The electricity price is negative.\nPrice: ${price} SEK/kWh`
+        "⚠️ Price unavailable — no change made",
+        "The script could not find a valid price slot for the current time and did not change the export limit."
       );
     } catch {}
+    return;
   }
 
-  // Decision purely on price:
-  // price < 0 -> LIMIT_0 ; price >= 0 -> LIMIT_100
-  const desired = price < 0 ? "LIMIT_0" : "LIMIT_100";
+  const currentPrice = slots[0].SEK_per_kWh;
+  console.log(`Found ${slots.length} slot(s) starting from now:`);
+  slots.forEach((s, i) =>
+    console.log(`  Slot ${i + 1}: ${new Date(s.time_start).toISOString()} → ${s.SEK_per_kWh} SEK/kWh`)
+  );
+
+  if (slots.length < 4) {
+    console.log(
+      `Only ${slots.length}/4 slots available (near end of day and tomorrow's prices not yet published) — not limiting export.`
+    );
+  } else if (slots.some((s) => s.SEK_per_kWh > -0.20)) {
+    console.log(
+      "Not all 4 upcoming slots are ≤ -0.20 SEK/kWh — not limiting export."
+    );
+  }
+
+  // ── Negative price alert (fires once per slot, regardless of export limit) ──
+  // Sends an email whenever the current slot price is < -0.10 SEK/kWh,
+  // but only once per slot so repeated runs don't spam.
+  const NEGATIVE_ALERT_THRESHOLD = -0.10;
+  if (currentPrice < NEGATIVE_ALERT_THRESHOLD) {
+    const currentSlotKey = slots[0].time_start; // ISO string, unique per slot
+    const lastAlertSlot = getLastAlertSlot();
+
+    if (lastAlertSlot !== currentSlotKey) {
+      console.log(
+        `Price ${currentPrice} SEK/kWh is below ${NEGATIVE_ALERT_THRESHOLD} — sending alert email.`
+      );
+      try {
+        await sendEmail(
+          `⚡ Negative electricity price alert: ${currentPrice} SEK/kWh`,
+          `The current electricity price has dropped below ${NEGATIVE_ALERT_THRESHOLD} SEK/kWh.\n\nCurrent slot: ${new Date(currentSlotKey).toISOString()}\nPrice: ${currentPrice} SEK/kWh\n\nThis alert is sent once per 15-minute slot.`
+        );
+        saveAlertSlot(currentSlotKey);
+      } catch (err) {
+        console.error("Failed to send negative price alert email:", err);
+      }
+    } else {
+      console.log(
+        `Price ${currentPrice} SEK/kWh is below threshold but alert already sent for this slot (${currentSlotKey}).`
+      );
+    }
+  }
+
+  const desired = determineDesiredState(slots);
 
   const last = getLastState();
   console.log("Last state (read from file):", last);
@@ -185,15 +307,12 @@ async function main() {
     return;
   }
 
-  if (desired === "LIMIT_0") {
-    await callGrowattLimit(0);
-  } else {
-    await callGrowattLimit(100);
-  }
+  // Apply the new limit
+  const limitMap = { LIMIT_5: 5, LIMIT_100: 100 };
+  await callGrowattLimit(limitMap[desired]);
 
   try {
     saveStateAtomic(desired);
-    // Re-read to verify
     const verify = getLastState();
     console.log("State saved. Verified state on disk:", verify);
     if (verify !== desired) {
@@ -205,12 +324,19 @@ async function main() {
     console.error("Failed to save state file:", err);
   }
 
+  const limitLabel = { LIMIT_5: "5%", LIMIT_100: "100%" };
+  const slotSummary = slots
+    .map((s, i) => `  Slot ${i + 1}: ${new Date(s.time_start).toISOString()} → ${s.SEK_per_kWh} SEK/kWh`)
+    .join("\n");
+  const reason =
+    desired === "LIMIT_100"
+      ? `Not all 4 upcoming 15-min slots are ≤ -0.20 SEK/kWh.`
+      : `All 4 upcoming 15-min slots are ≤ -0.20 SEK/kWh (price will stay deeply negative for at least 1 hour).`;
+
   try {
     await sendEmail(
-      `Growatt export limit changed → ${desired}`,
-      `Price: ${price} SEK/kWh\nNew export limit: ${
-        desired === "LIMIT_0" ? "0%" : "100%"
-      }`
+      `Growatt export limit changed → ${limitLabel[desired]}`,
+      `Current price: ${currentPrice} SEK/kWh\n\nNext 4 slots (1 hour):\n${slotSummary}\n\n${reason}\n\nNew export limit: ${limitLabel[desired]}`
     );
   } catch {}
 }
