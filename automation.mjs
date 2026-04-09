@@ -219,17 +219,17 @@ function saveAlertSlot(slotKey) {
 // DESIRED STATE LOGIC
 //
 // Only restrict export when ALL 4 consecutive 15-minute slots
-// (current + next 3) are ≤ -0.20 SEK/kWh. This ensures the
+// (current + next 3) are ≤ -0.10 SEK/kWh. This ensures the
 // price is deeply negative for a full hour before we act.
 //
-//   all 4 slots ≤ -0.20 SEK/kWh  →  LIMIT_5  (5%)
+//   all 4 slots ≤ -0.10 SEK/kWh  →  LIMIT_5  (5%)
 //   anything else                 →  LIMIT_100 (100%)
 // ─────────────────────────────────────────────────────────────
 
 function determineDesiredState(slots) {
   if (!slots || slots.length < 4) return "LIMIT_100";
 
-  const allDeepNegative = slots.every((s) => s.SEK_per_kWh <= -0.20);
+  const allDeepNegative = slots.every((s) => s.SEK_per_kWh <= -0.10);
   return allDeepNegative ? "LIMIT_5" : "LIMIT_100";
 }
 
@@ -277,9 +277,9 @@ async function main() {
     console.log(
       `Only ${slots.length}/4 slots available (near end of day and tomorrow's prices not yet published) — not limiting export.`
     );
-  } else if (slots.some((s) => s.SEK_per_kWh > -0.20)) {
+  } else if (slots.some((s) => s.SEK_per_kWh > -0.10)) {
     console.log(
-      "Not all 4 upcoming slots are ≤ -0.20 SEK/kWh — not limiting export."
+      "Not all 4 upcoming slots are ≤ -0.10 SEK/kWh — not limiting export."
     );
   }
 
@@ -345,8 +345,8 @@ async function main() {
     .join("\n");
   const reason =
     desired === "LIMIT_100"
-      ? `Not all 4 upcoming 15-min slots are ≤ -0.20 SEK/kWh.`
-      : `All 4 upcoming 15-min slots are ≤ -0.20 SEK/kWh (price will stay deeply negative for at least 1 hour).`;
+      ? `Not all 4 upcoming 15-min slots are ≤ -0.10 SEK/kWh.`
+      : `All 4 upcoming 15-min slots are ≤ -0.10 SEK/kWh (price will stay deeply negative for at least 1 hour).`;
 
   try {
     await sendEmail(
