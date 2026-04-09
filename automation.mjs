@@ -218,19 +218,35 @@ function saveAlertSlot(slotKey) {
 // ─────────────────────────────────────────────────────────────
 // DESIRED STATE LOGIC
 //
-// Only restrict export when ALL 4 consecutive 15-minute slots
-// (current + next 3) are ≤ -0.10 SEK/kWh. This ensures the
-// price is deeply negative for a full hour before we act.
+// To START limiting: all 4 consecutive 15-min slots (current +
+// next 3) must be ≤ -0.10 SEK/kWh, ensuring the price is
+// deeply negative for a full hour before we act.
 //
-//   all 4 slots ≤ -0.10 SEK/kWh  →  LIMIT_5  (5%)
-//   anything else                 →  LIMIT_100 (100%)
+// To STOP limiting: only when the current slot's price has
+// actually risen above -0.10 SEK/kWh — not based on lookahead.
+//
+//   currently limited AND current slot > -0.10  →  LIMIT_100
+//   all 4 slots ≤ -0.10 SEK/kWh                →  LIMIT_5
+//   anything else                               →  keep current
 // ─────────────────────────────────────────────────────────────
 
-function determineDesiredState(slots) {
-  if (!slots || slots.length < 4) return "LIMIT_100";
+function determineDesiredState(slots, lastState) {
+  if (!slots || slots.length === 0) return "LIMIT_100";
 
-  const allDeepNegative = slots.every((s) => s.SEK_per_kWh <= -0.10);
-  return allDeepNegative ? "LIMIT_5" : "LIMIT_100";
+  const currentPrice = slots[0].SEK_per_kWh;
+
+  // Recovery: only lift the limit once the current slot is actually above -0.10
+  if (lastState === "LIMIT_5" && currentPrice > -0.10) {
+    return "LIMIT_100";
+  }
+
+  // Engage: require all 4 slots to be ≤ -0.10 before limiting
+  if (slots.length >= 4 && slots.every((s) => s.SEK_per_kWh <= -0.10)) {
+    return "LIMIT_5";
+  }
+
+  // No change
+  return lastState === "LIMIT_5" ? "LIMIT_5" : "LIMIT_100";
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -311,9 +327,8 @@ async function main() {
     }
   }
 
-  const desired = determineDesiredState(slots);
-
   const last = getLastState();
+  const desired = determineDesiredState(slots, last);
   console.log("Last state (read from file):", last);
   console.log("Desired state:", desired);
 
