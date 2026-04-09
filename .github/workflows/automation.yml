@@ -1,17 +1,13 @@
-
 name: Energy Automation
-
 on:
   schedule:
     - cron: "0,15,30,45 * * * *"
   workflow_dispatch: {}
-
 jobs:
   run-automation:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     env:
       GMAIL_USER: ${{ secrets.GMAIL_USER }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -23,26 +19,20 @@ jobs:
       USER_AGENT: github-actions/1.0
       TIMEOUT_MS: 15000
       GROWATT_STATE_PATH: ${{ github.workspace }}/.growatt_state
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           persist-credentials: true
           fetch-depth: 0
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          # ⬅️ removed cache: 'npm'
-
+          node-version: 24
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-
       - name: Run automation script
         run: node automation.mjs
-
       - name: Commit state if changed
         run: |
           set -e
