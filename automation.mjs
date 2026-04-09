@@ -58,6 +58,21 @@ async function sendEmail(subject, text) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// TIME FORMATTING (Europe/Stockholm)
+// ─────────────────────────────────────────────────────────────
+
+function toStockholmTime(isoString) {
+  return new Date(isoString).toLocaleString("sv-SE", {
+    timeZone: "Europe/Stockholm",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
 // CALL WORKING GROWATT SCRIPT
 // ─────────────────────────────────────────────────────────────
 
@@ -255,7 +270,7 @@ async function main() {
   const currentPrice = slots[0].SEK_per_kWh;
   console.log(`Found ${slots.length} slot(s) starting from now:`);
   slots.forEach((s, i) =>
-    console.log(`  Slot ${i + 1}: ${new Date(s.time_start).toISOString()} → ${s.SEK_per_kWh} SEK/kWh`)
+    console.log(`  Slot ${i + 1}: ${toStockholmTime(s.time_start)} → ${s.SEK_per_kWh} SEK/kWh`)
   );
 
   if (slots.length < 4) {
@@ -283,7 +298,7 @@ async function main() {
       try {
         await sendEmail(
           `⚡ Negative electricity price alert: ${currentPrice} SEK/kWh`,
-          `The current electricity price has dropped below ${NEGATIVE_ALERT_THRESHOLD} SEK/kWh.\n\nCurrent slot: ${new Date(currentSlotKey).toISOString()}\nPrice: ${currentPrice} SEK/kWh\n\nThis alert is sent once per 15-minute slot.`
+          `The current electricity price has dropped below ${NEGATIVE_ALERT_THRESHOLD} SEK/kWh.\n\nCurrent slot: ${toStockholmTime(currentSlotKey)}\nPrice: ${currentPrice} SEK/kWh\n\nThis alert is sent once per 15-minute slot.`
         );
         saveAlertSlot(currentSlotKey);
       } catch (err) {
@@ -326,7 +341,7 @@ async function main() {
 
   const limitLabel = { LIMIT_5: "5%", LIMIT_100: "100%" };
   const slotSummary = slots
-    .map((s, i) => `  Slot ${i + 1}: ${new Date(s.time_start).toISOString()} → ${s.SEK_per_kWh} SEK/kWh`)
+    .map((s, i) => `  Slot ${i + 1}: ${toStockholmTime(s.time_start)} → ${s.SEK_per_kWh} SEK/kWh`)
     .join("\n");
   const reason =
     desired === "LIMIT_100"
